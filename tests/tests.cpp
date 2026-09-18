@@ -55,6 +55,30 @@ void mapsAndTransforms() {
     }
 }
 
+void placementPreview() {
+    Game game;
+    Renderer baseline, preview;
+    baseline.draw(game);
+    const auto position=game.player().body.position;
+    for(int id=0;id<2;++id) {
+        const Shot shot{id,{260,389}};
+        auto portals=game.portals();
+        std::vector<ShotTrace> traces;
+        expect(firePortal(game.level().map,game.player(),game.motion(),portals,shot,traces),"preview fixture places portal");
+        preview.draw(game,true,false,shot);
+        expect(!std::equal(baseline.pixels(),baseline.pixels()+WindowWidth*WindowHeight,preview.pixels()),"preview is visible");
+        expect(!game.portals()[0].active() && !game.portals()[1].active() && near(position,game.player().body.position),
+               "preview must not mutate game");
+        const Vec2 center=pixels(portals[id].tile)+(portals[id].horizontal()?Vec2{30,10}:Vec2{10,30});
+        expect(preview.pixels()[static_cast<int>(center.y)*WindowWidth+static_cast<int>(center.x)]==
+               (id==0?0x3296FFu:0xFF9632u),"preview center matches real placement");
+    }
+    preview.draw(game,true,false,Shot{0,game.traversal().aimOrigin});
+    expect(!game.portals()[0].active(),"invalid preview never places portal");
+    preview.draw(game);
+    expect(std::equal(baseline.pixels(),baseline.pixels()+WindowWidth*WindowHeight,preview.pixels()),"leaving aim clears preview");
+}
+
 void raysAndDirections() {
     const auto level = makeLevel(0);
     const Vec2 origin{450, 300};
@@ -405,6 +429,7 @@ void stress() {
 
 int main() {
     const std::pair<const char*, std::function<void()>> suites[]{
+        {"non-mutating placement preview and actual portal position", placementPreview},
         {"editable level data and 64 invertible portal transforms", mapsAndTransforms},
         {"actual ray faces, direction rules and corner/vertical rays", raysAndDirections},
         {"floating point collision, high speed, recovery and map13 geometry", terrain},

@@ -60,7 +60,7 @@ void Renderer::body(const Body& value, std::uint32_t color, const Portal* clip) 
               static_cast<int>(std::ceil(r.right)) - 1, static_cast<int>(std::ceil(r.bottom)) - 1, color);
 }
 
-void Renderer::draw(const Game& game, bool debug, bool grid) {
+void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot> preview) {
     std::fill(pixels_.begin(), pixels_.end(), 0);
     if (grid) {
         for (int x = 0; x < WindowWidth; x += TileSize) line({x, 0}, {x, WindowHeight - 1}, 0x505050);
@@ -104,6 +104,45 @@ void Renderer::draw(const Game& game, bool debug, bool grid) {
         }
     }
     for (const auto& trace : game.traces()) line(trace.origin, trace.end, PortalColors[trace.portal], 3);
+    if (preview && !game.finished()) {
+        // Use the real firing rules on a copy: preview never changes live portals.
+        auto portals = game.portals();
+        std::vector<ShotTrace> traces;
+        const bool valid = firePortal(game.level().map, game.player(), game.motion(), portals, *preview, traces);
+        const Vec2 origin = game.traversal().aimOrigin;
+        const auto hit = castShot(game.level().map, origin, preview->target);
+        const Vec2 end = hit ? hit->point : preview->target;
+        const auto color = valid ? PortalColors[preview->portal] : 0xEF7070u;
+        const Vec2 ray = end - origin;
+        const double length = std::sqrt(dot(ray, ray));
+        for (double d = 0; d < length; d += 12)
+            line(origin + ray * (d / length), origin + ray * (std::min(d + 4, length) / length), color);
+        if (valid) {
+            const auto& portal = portals[preview->portal];
+            const auto frame = decode(portal);
+            // Only outline the three tiles, preserving visibility of the wall.
+            for (int i = 0; i < 3; ++i) {
+                const Vec2 tile = por2::pixels(portal.tile) + (portal.horizontal() ? Vec2{i*20,0} : Vec2{0,i*20});
+                for (int n = 1; n < 20; ++n) {
+                    const Vec2 p = tile + (portal.horizontal() ? Vec2{n,10} : Vec2{10,n});
+                    const auto shade = gradient(preview->portal, dot(p-frame.anchor,frame.tangent)/60.0);
+                    if (portal.horizontal()) {
+                        line(tile+Vec2{n,1},tile+Vec2{n,2},shade);
+                        line(tile+Vec2{n,18},tile+Vec2{n,19},shade);
+                    } else {
+                        line(tile+Vec2{1,n},tile+Vec2{2,n},shade);
+                        line(tile+Vec2{18,n},tile+Vec2{19,n},shade);
+                    }
+                }
+            }
+            const Vec2 middle = por2::pixels(portal.tile) + (portal.horizontal() ? Vec2{30,10} : Vec2{10,30});
+            line(middle-Vec2{3,0},middle+Vec2{3,0},color);
+            line(middle-Vec2{0,3},middle+Vec2{0,3},color);
+        } else {
+            line(end-Vec2{4,4},end+Vec2{4,4},color,2);
+            line(end+Vec2{-4,4},end+Vec2{4,-4},color,2);
+        }
+    }
     if (debug) {
         const auto head = game.traversal().aimOrigin;
         const int x = static_cast<int>(std::lround(head.x)), y = static_cast<int>(std::lround(head.y));

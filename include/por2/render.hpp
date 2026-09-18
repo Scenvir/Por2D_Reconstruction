@@ -9,7 +9,8 @@ namespace por2 {
 class Renderer {
 public:
     Renderer();
-    void draw(const Game& game, bool debug = true, bool grid = false);
+    void draw(const Game& game, bool debug = true, bool grid = false,
+              std::optional<Shot> preview = std::nullopt);
     const std::uint32_t* pixels() const { return pixels_.data(); }
     void saveBitmap(const std::filesystem::path& path) const;
 private:
