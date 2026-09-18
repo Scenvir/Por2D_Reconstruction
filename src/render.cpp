@@ -148,6 +148,20 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
             const Vec2 side{-forward.y,forward.x};
             const Vec2 center = middle + side * (available[0] && available[1] ? (id == 0 ? -5.0 : 5.0) : 0.0);
             const Vec2 tip = center + forward * 8;
+            // Separate the arrow from an existing same-color portal only where they overlap.
+            const auto& existing = game.portals()[id];
+            bool overlapsSameColor = false;
+            for (int i = 0; i < 3 && existing.active(); ++i) {
+                const int x = portal.tile.x + (portal.horizontal() ? i : 0);
+                const int y = portal.tile.y + (portal.horizontal() ? 0 : i);
+                overlapsSameColor = overlapsSameColor || existing.occupies(x, y);
+            }
+            if (overlapsSameColor) {
+                const Vec2 inset{-1,-1};
+                line(center-forward*8+inset,tip+inset,0x101822,4);
+                line(tip+inset,tip-forward*5+side*3+inset,0x101822,4);
+                line(tip+inset,tip-forward*5-side*3+inset,0x101822,4);
+            }
             line(center-forward*8,tip,PortalColors[id],2);
             line(tip,tip-forward*5+side*3,PortalColors[id],2);
             line(tip,tip-forward*5-side*3,PortalColors[id],2);

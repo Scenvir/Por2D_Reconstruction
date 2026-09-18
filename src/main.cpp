@@ -7,6 +7,7 @@
 #include <string>
 #include <algorithm>
 #include <fstream>
+#include <random>
 
 namespace {
 RECT viewport(HWND window) {
@@ -57,6 +58,29 @@ struct Application {
     std::vector<int> levels;
     int selected=0;
     bool menu=true, started=false, fullscreen=false;
+    bool intro=true;
+    por2::Game demo{0};
+    std::mt19937 random{std::random_device{}()};
+    int demoTicks=0, demoMove=0;
+    void leaveIntro() { intro=false; menu=true; clearInput(); }
+    void updateDemo() {
+        por2::InputFrame input;
+        if (demoTicks % 30 == 0) demoMove=static_cast<int>(random()%3)-1;
+        input.movement={demoMove<0,demoMove>0,random()%45==0};
+        if (demoTicks % 25 == 0)
+            input.shots.push_back({static_cast<int>(random()%2),
+                {static_cast<double>(random()%1000),static_cast<double>(random()%540)}});
+        if (++demoTicks % 1800 == 0) demo.restart();
+        demo.tick(input);
+        renderer.draw(demo,false,false);
+    }
+    void drawIntro(HDC dc) const {
+        fill(dc,{310,35,690,135},RGB(15,21,34));
+        label(dc,{310,40,690,100},L"Por2D",48,RGB(235,242,255));
+        label(dc,{310,100,690,130},L"PORTAL / LEVEL 0",16,RGB(150,173,201));
+        fill(dc,{250,465,750,545},RGB(15,21,34));
+        label(dc,{250,475,750,535},L"按任意键开始",28,RGB(255,215,100));
+    }
     WINDOWPLACEMENT placement{};
     LONG_PTR savedStyle=0;
     void clearInput() { keys={}; mousePressed={}; shots.clear(); exitPressed=false; ReleaseCapture(); }
@@ -113,9 +137,23 @@ struct Application {
     }
 
     void update(HWND window) {
+        if (intro && !smoke) {
+            updateDemo();
+            InvalidateRect(window,nullptr,FALSE);
+            return;
+        }
         if (smoke) {
             ++smokeTicks;
             if (smokeTicks == 1) {
+                updateDemo();
+                if (!intro || demoTicks!=1 || demo.level().id!=0)
+                    throw std::runtime_error("intro demo failed");
+                SendMessageW(window,WM_PAINT,0,0);
+                SendMessageW(window,WM_KEYDOWN,VK_RETURN,0);
+                if(intro || !menu || started) throw std::runtime_error("intro did not open level selection");
+                SendMessageW(window,WM_KEYDOWN,VK_RETURN,static_cast<LPARAM>(1LL<<30));
+                if(started) throw std::runtime_error("intro key repeat started a level");
+                SendMessageW(window,WM_KEYUP,VK_RETURN,0);
                 SendMessageW(window, WM_KEYDOWN, VK_RETURN, 0);
                 if(exitPressed) throw std::runtime_error("menu E leaked into exit action");
                 SendMessageW(window, WM_KEYUP, VK_RETURN, 0);
@@ -244,6 +282,11 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     case WM_KEYUP: {
         const bool pressed = message != WM_KEYUP;
         unsigned key = static_cast<unsigned>(wparam);
+        if (app->intro && pressed && !(lparam & (1LL<<30))) {
+            app->leaveIntro();
+            InvalidateRect(window,nullptr,FALSE);
+            return 0;
+        }
         if (key == VK_CONTROL) key = (lparam & (1LL << 24)) ? VK_RCONTROL : VK_LCONTROL;
         if (key < app->keys.size()) app->keys[key] = pressed;
         if (pressed && !(lparam & (1LL << 30))) {
@@ -270,6 +313,11 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     }
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
+        if(app->intro) {
+            app->leaveIntro();
+            InvalidateRect(window,nullptr,FALSE);
+            return 0;
+        }
         app->previewPortal = message == WM_LBUTTONDOWN ? 0 : 1;
         app->mousePressed[message == WM_LBUTTONDOWN ? 0 : 1] = true;
         SetCapture(window);
@@ -310,14 +358,15 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         info.bmiHeader.biCompression = BI_RGB;
         SetDIBitsToDevice(dc, 0, 0, por2::WindowWidth, por2::WindowHeight, 0, 0, 0,
                          por2::WindowHeight, app->renderer.pixels(), &info, DIB_RGB_COLORS);
-        if(app->menu) app->drawMenu(dc);
+        if(app->intro) app->drawIntro(dc);
+        else if(app->menu) app->drawMenu(dc);
         else if (app->game.finished()) {
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(255, 255, 255));
             RECT area{0, 30, por2::WindowWidth, 70};
             DrawTextW(dc, L"Completed!  R: play again    Esc: levels", -1, &area, DT_CENTER | DT_SINGLELINE);
         }
-        if(!app->menu) {
+        if(!app->menu && !app->intro) {
             const auto entry=std::find(app->levels.begin(),app->levels.end(),app->game.level().id);
             const std::string caption = "Level" + std::to_string(entry-app->levels.begin()) + "  " + app->game.level().name;
             const std::wstring wide(caption.begin(), caption.end());
@@ -341,7 +390,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             SelectObject(frame,oldFrame); DeleteObject(frameBitmap); DeleteDC(frame);
         }
         SelectObject(dc,oldBitmap);
-        if(app->smoke && app->smokeTicks==13 && !app->screenshot.empty()) {
+        if(app->smoke && (app->smokeTicks==13 || app->intro) && !app->screenshot.empty()) {
             std::vector<std::uint32_t> pixels(1000*600);
             if(!GetDIBits(dc,bitmap,0,600,pixels.data(),&info,DIB_RGB_COLORS))
                 app->failure="menu screenshot failed";
@@ -349,7 +398,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
                 BITMAPFILEHEADER header{}; header.bfType=0x4d42;
                 header.bfOffBits=sizeof(header)+sizeof(BITMAPINFOHEADER);
                 header.bfSize=header.bfOffBits+static_cast<DWORD>(pixels.size()*4);
-                std::ofstream file(app->screenshot+".menu.bmp",std::ios::binary);
+                std::ofstream file(app->screenshot+(app->intro?".intro.bmp":".menu.bmp"),std::ios::binary);
                 file.write(reinterpret_cast<const char*>(&header),sizeof(header));
                 file.write(reinterpret_cast<const char*>(&info.bmiHeader),sizeof(BITMAPINFOHEADER));
                 file.write(reinterpret_cast<const char*>(pixels.data()),pixels.size()*4);
@@ -374,8 +423,9 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
     Application app(level);
     app.smoke = smoke;
     app.menu=!direct || smoke; app.started=direct && !smoke;
+    app.intro=!direct || smoke;
     app.screenshot = screenshot;
-    app.renderer.draw(app.game);
+    app.renderer.draw(app.intro ? app.demo : app.game);
     const HINSTANCE instance = GetModuleHandleW(nullptr);
     WNDCLASSW type{};
     type.lpfnWndProc = windowProcedure;
