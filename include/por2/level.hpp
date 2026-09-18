@@ -7,6 +7,7 @@ namespace por2 {
 struct Level {
     int id = 0;
     std::string name;
+    std::string commentary;
     TileMap map;
     Body spawn;
     std::optional<Body> exit;

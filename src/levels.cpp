@@ -7,7 +7,8 @@ namespace {
 Level map0() {
     Level level;
     level.id = 0;
-    level.name = "Concept";
+    level.name = u8"概念";
+    level.commentary = u8"一种内在的结构，一个巧妙的概念。";
     Body exit;
     level.spawn.position.x = 320;
     level.spawn.position.y = 360;
@@ -27,7 +28,8 @@ Level map0() {
 Level map1() {
     Level level;
     level.id = 1;
-    level.name = "Experimental 1";
+    level.name = u8"实验地图一";
+    level.commentary = u8"";
     // Original test map omitted its spawn; use a safe explicit default.
     level.spawn.position = {200, 200};
     for (int i = 0; i < 50; i++)
@@ -60,7 +62,8 @@ Level map1() {
 Level map2() {
     Level level;
     level.id = 2;
-    level.name = "Experimental 2";
+    level.name = u8"实验地图二";
+    level.commentary = u8"";
     level.spawn.position.x = 200;
     level.spawn.position.y = 200;
     for (int i = 4; i < 26; i++)
@@ -88,7 +91,8 @@ Level map2() {
 Level map3() {
     Level level;
     level.id = 3;
-    level.name = "Gap";
+    level.name = u8"裂缝";
+    level.commentary = u8"从裂缝中，窥见深渊的一角。";
     Body exit;
     level.spawn.position.x = 200;
     level.spawn.position.y = 320;
@@ -122,7 +126,8 @@ Level map3() {
 Level map4() {
     Level level;
     level.id = 4;
-    level.name = "Abyss";
+    level.name = u8"深渊";
+    level.commentary = u8"当你凝视深渊的时候，深渊也在凝视你。";
     Body exit;
     level.spawn.position.x = 240;
     level.spawn.position.y = 320;
@@ -157,7 +162,8 @@ Level map4() {
 Level map5() {
     Level level;
     level.id = 5;
-    level.name = "Mountain";
+    level.name = u8"高山";
+    level.commentary = u8"攀登极限，因为山就在那里。";
     Body exit;
     level.spawn.position.x = 300;
     level.spawn.position.y = 340;
@@ -182,7 +188,8 @@ Level map5() {
 Level map6() {
     Level level;
     level.id = 6;
-    level.name = "Spin";
+    level.name = u8"旋转";
+    level.commentary = u8"换个角度看世界。";
     Body exit;
     level.spawn.position.x = 300;
     level.spawn.position.y = 340;
@@ -209,7 +216,8 @@ Level map6() {
 Level map7() {
     Level level;
     level.id = 7;
-    level.name = "Leap";
+    level.name = u8"远跳";
+    level.commentary = u8"这是角色的一小步，却是整个世界的一大步。";
     Body exit;
     level.spawn.position.x = 300;
     level.spawn.position.y = 340;
@@ -232,7 +240,8 @@ Level map7() {
 Level map8() {
     Level level;
     level.id = 8;
-    level.name = "Brain";
+    level.name = u8"大脑";
+    level.commentary = u8"只送大脑。";
     Body exit;
     level.spawn.position.x = 340;
     level.spawn.position.y = 340;
@@ -255,7 +264,8 @@ Level map8() {
 Level map9() {
     Level level;
     level.id = 9;
-    level.name = "Shuttle";
+    level.name = u8"穿梭";
+    level.commentary = u8"复行数十步，豁然开朗。";
     Body exit;
     level.spawn.position.x = 320;
     level.spawn.position.y = 360;
@@ -282,7 +292,8 @@ Level map9() {
 Level map10() {
     Level level;
     level.id = 10;
-    level.name = "Fulcrum";
+    level.name = u8"支点";
+    level.commentary = u8"给我一个支点，我就能撑起自己。";
     Body exit;
     level.spawn.position.x = 360;
     level.spawn.position.y = 380;
@@ -310,7 +321,8 @@ Level map10() {
 Level map11() {
     Level level;
     level.id = 11;
-    level.name = "Upend";
+    level.name = u8"倒立";
+    level.commentary = u8"上下颠倒。";
     Body exit;
     level.spawn.position.x = 320;
     level.spawn.position.y = 360;
@@ -334,7 +346,8 @@ Level map11() {
 Level map12() {
     Level level;
     level.id = 12;
-    level.name = "Foresight";
+    level.name = u8"远见";
+    level.commentary = u8"带给下一刻的自己。";
     Body exit;
     level.spawn.position.x = 320;
     level.spawn.position.y = 360;
@@ -362,7 +375,8 @@ Level map12() {
 Level map13() {
     Level level;
     level.id = 13;
-    level.name = "Valve";
+    level.name = u8"阀门";
+    level.commentary = u8"关好它。";
     Body exit;
     level.spawn.position.x = 260;
     level.spawn.position.y = 380;
@@ -399,7 +413,8 @@ Level map13() {
 Level map14() {
     Level level;
     level.id = 14;
-    level.name = "Anvil";
+    level.name = u8"铁砧";
+    level.commentary = u8"锻打成型。";
     Body exit;
     level.spawn.position.x = 300;
     level.spawn.position.y = 340;
@@ -421,7 +436,8 @@ Level map14() {
 Level map15() {
     Level level;
     level.id = 15;
-    level.name = "Filp0";
+    level.name = u8"生死逆转";
+    level.commentary = u8"扭转乾坤。";
     Body exit;
     level.spawn.position.x = 360;
     level.spawn.position.y = 320;
@@ -446,7 +462,8 @@ Level map15() {
 Level map16() {
     Level level;
     level.id = 16;
-    level.name = "Flip1";
+    level.name = u8"生死逆转";
+    level.commentary = u8"扭转乾坤。";
     Body exit;
     level.spawn.position.x = 580;
     level.spawn.position.y = 320;

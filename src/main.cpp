@@ -10,6 +10,14 @@
 #include <random>
 
 namespace {
+std::wstring utf8(const std::string& text) {
+    if (text.empty()) return {};
+    const int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),static_cast<int>(text.size()),nullptr,0);
+    if (!count) throw std::runtime_error("invalid UTF-8 text");
+    std::wstring result(count,L'\0');
+    MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),static_cast<int>(text.size()),result.data(),count);
+    return result;
+}
 RECT viewport(HWND window) {
     RECT r{}; GetClientRect(window, &r);
     const double scale = std::min(r.right / 1000.0, r.bottom / 600.0);
@@ -59,6 +67,31 @@ struct Application {
     int selected=0;
     bool menu=true, started=false, fullscreen=false;
     bool intro=true;
+    static constexpr int LevelIntroDuration=150;
+    int levelIntroTicks=-1;
+    unsigned suppressedKey=256;
+    bool levelIntroActive() const { return levelIntroTicks>=0; }
+    void beginLevelIntro() { levelIntroTicks=0; clearInput(); }
+    void endLevelIntro() { levelIntroTicks=-1; clearInput(); }
+    void stepLevelIntro() {
+        if (levelIntroActive() && ++levelIntroTicks>=LevelIntroDuration) endLevelIntro();
+    }
+    void drawLevelIntro(HDC dc) const {
+        fill(dc,{0,0,1000,600},RGB(15,21,34));
+        const double alpha=std::clamp(std::min(levelIntroTicks/22.0,
+            (LevelIntroDuration-levelIntroTicks)/22.0),0.0,1.0);
+        const auto tint=[&](int r,int g,int b) {
+            return RGB(15+static_cast<int>((r-15)*alpha),
+                       21+static_cast<int>((g-21)*alpha),34+static_cast<int>((b-34)*alpha));
+        };
+        const auto entry=std::find(levels.begin(),levels.end(),game.level().id);
+        const int offset=static_cast<int>((1-alpha)*12);
+        label(dc,{80,155+offset,920,205+offset},L"level "+std::to_wstring(entry-levels.begin()),24,tint(130,194,255));
+        label(dc,{60,215+offset,940,295+offset},utf8(game.level().name),52,tint(240,245,255));
+        fill(dc,{450,314,550,316},tint(255,215,100));
+        label(dc,{40,335+offset,960,390+offset},utf8(game.level().commentary),24,tint(190,205,225));
+        label(dc,{60,505,940,550},L"按任意键跳过",17,tint(139,157,183));
+    }
     por2::Game demo{0};
     std::mt19937 random{std::random_device{}()};
     int demoTicks=0, demoMove=0;
@@ -105,6 +138,7 @@ struct Application {
     }
     void startSelected() {
         game=por2::Game(levels[selected]); menu=false; started=true; clearInput();
+        beginLevelIntro();
         renderer.draw(game,debug,grid);
     }
     void menuClick(HWND window, por2::Vec2 point) {
@@ -125,7 +159,7 @@ struct Application {
         for(int i=first;i<std::min(first+15,static_cast<int>(levels.size()));++i) {
             RECT r=card(i-first); fill(dc,r,i==selected?RGB(35,110,174):RGB(31,43,61));
             const auto name=por2::makeLevel(levels[i]).name;
-            const std::wstring caption=L"Level"+std::to_wstring(i)+L"  "+std::wstring(name.begin(),name.end());
+            const std::wstring caption=L"Level "+std::to_wstring(i)+L"  "+utf8(name);
             label(dc,r,caption,20,RGB(240,245,255));
         }
         label(dc,{60,480,240,526},L"上一页",20,RGB(130,194,255));
@@ -157,7 +191,23 @@ struct Application {
                 SendMessageW(window, WM_KEYDOWN, VK_RETURN, 0);
                 if(exitPressed) throw std::runtime_error("menu E leaked into exit action");
                 SendMessageW(window, WM_KEYUP, VK_RETURN, 0);
+                if (!levelIntroActive() || utf8(game.level().name)!=L"概念")
+                    throw std::runtime_error("Chinese level intro did not start");
+                const auto introPosition=game.player().body.position;
+                smoke=false;
+                for (int i=0;i<LevelIntroDuration-1;++i) update(window);
+                smoke=true;
+                if (!levelIntroActive() || game.player().body.position!=introPosition)
+                    throw std::runtime_error("level intro did not freeze physics");
+                stepLevelIntro();
+                if (levelIntroActive()) throw std::runtime_error("level intro did not finish automatically");
+                beginLevelIntro();
+                levelIntroTicks=40;
+                SendMessageW(window,WM_PAINT,0,0);
                 SendMessageW(window, WM_KEYDOWN, 'D', 0);
+                SendMessageW(window, WM_KEYDOWN, 'D', static_cast<LPARAM>(1LL<<30));
+                if (levelIntroActive() || keys['D'])
+                    throw std::runtime_error("intro skip leaked into movement");
             }
             if (smokeTicks == 8) SendMessageW(window, WM_KEYUP, 'D', 0);
             if (smokeTicks == 2) {
@@ -234,13 +284,22 @@ struct Application {
         }
         por2::InputFrame input;
         input.movement = {keys['A'], keys['D'], keys['W']};
+        if (!menu && levelIntroActive()) {
+            stepLevelIntro();
+            InvalidateRect(window,nullptr,FALSE);
+            return;
+        }
         input.restart = keys['R'];
         input.useExit = exitPressed;
         exitPressed = false;
         //input.skip = keys[VK_LCONTROL];
         input.shots.swap(shots);
         const auto before=game.player().body.position;
+        const int previousLevel=game.level().id;
+        const bool previouslyFinished=game.finished();
         if(!menu) game.tick(input);
+        if (game.level().id!=previousLevel || (previouslyFinished && !game.finished()))
+            beginLevelIntro();
         if(smoke && menu && (before.x!=game.player().body.position.x || before.y!=game.player().body.position.y))
             throw std::runtime_error("menu did not freeze physics");
         std::optional<por2::Shot> preview;
@@ -256,7 +315,7 @@ struct Application {
         const std::string nextTitle = game.finished()
             ? "Por2D - Completed! R: play again | Esc: menu | F11: fullscreen"
             : "Por2D - " + game.level().name + " | Esc: levels  F11: fullscreen | A/D: move  W: jump  E: exit  R: restart";
-        if (nextTitle != title) { title = nextTitle; SetWindowTextA(window, title.c_str()); }
+        if (nextTitle != title) { title = nextTitle; SetWindowTextW(window, utf8(title).c_str()); }
         InvalidateRect(window, nullptr, FALSE);
         if (smoke) SendMessageW(window, WM_PAINT, 0, 0);
     }
@@ -279,9 +338,22 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         return 0;
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
-    case WM_KEYUP: {
-        const bool pressed = message != WM_KEYUP;
+    case WM_KEYUP:
+    case WM_SYSKEYUP: {
+        const bool pressed = message != WM_KEYUP && message != WM_SYSKEYUP;
         unsigned key = static_cast<unsigned>(wparam);
+        if (key==app->suppressedKey) {
+            if (!pressed) app->suppressedKey=256;
+            return 0;
+        }
+        if (app->levelIntroActive() && !app->menu) {
+            if (pressed && !(lparam & (1LL<<30))) {
+                app->endLevelIntro();
+                app->suppressedKey=key;
+                InvalidateRect(window,nullptr,FALSE);
+            }
+            return 0;
+        }
         if (app->intro && pressed && !(lparam & (1LL<<30))) {
             app->leaveIntro();
             InvalidateRect(window,nullptr,FALSE);
@@ -313,6 +385,11 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     }
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
+        if(app->levelIntroActive() && !app->menu) {
+            app->endLevelIntro();
+            InvalidateRect(window,nullptr,FALSE);
+            return 0;
+        }
         if(app->intro) {
             app->leaveIntro();
             InvalidateRect(window,nullptr,FALSE);
@@ -360,16 +437,17 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
                          por2::WindowHeight, app->renderer.pixels(), &info, DIB_RGB_COLORS);
         if(app->intro) app->drawIntro(dc);
         else if(app->menu) app->drawMenu(dc);
+        else if(app->levelIntroActive()) app->drawLevelIntro(dc);
         else if (app->game.finished()) {
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(255, 255, 255));
             RECT area{0, 30, por2::WindowWidth, 70};
             DrawTextW(dc, L"Completed!  R: play again    Esc: levels", -1, &area, DT_CENTER | DT_SINGLELINE);
         }
-        if(!app->menu && !app->intro) {
+        if(!app->menu && !app->intro && !app->levelIntroActive()) {
             const auto entry=std::find(app->levels.begin(),app->levels.end(),app->game.level().id);
             const std::string caption = "Level" + std::to_string(entry-app->levels.begin()) + "  " + app->game.level().name;
-            const std::wstring wide(caption.begin(), caption.end());
+            const std::wstring wide=utf8(caption);
             RECT levelArea{690, 548, 975, 588};
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(220, 230, 245));
@@ -390,7 +468,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             SelectObject(frame,oldFrame); DeleteObject(frameBitmap); DeleteDC(frame);
         }
         SelectObject(dc,oldBitmap);
-        if(app->smoke && (app->smokeTicks==13 || app->intro) && !app->screenshot.empty()) {
+        if(app->smoke && (app->smokeTicks==13 || app->intro || app->levelIntroActive()) && !app->screenshot.empty()) {
             std::vector<std::uint32_t> pixels(1000*600);
             if(!GetDIBits(dc,bitmap,0,600,pixels.data(),&info,DIB_RGB_COLORS))
                 app->failure="menu screenshot failed";
@@ -398,7 +476,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
                 BITMAPFILEHEADER header{}; header.bfType=0x4d42;
                 header.bfOffBits=sizeof(header)+sizeof(BITMAPINFOHEADER);
                 header.bfSize=header.bfOffBits+static_cast<DWORD>(pixels.size()*4);
-                std::ofstream file(app->screenshot+(app->intro?".intro.bmp":".menu.bmp"),std::ios::binary);
+                std::ofstream file(app->screenshot+(app->intro?".intro.bmp":app->levelIntroActive()?".level-intro.bmp":".menu.bmp"),std::ios::binary);
                 file.write(reinterpret_cast<const char*>(&header),sizeof(header));
                 file.write(reinterpret_cast<const char*>(&info.bmiHeader),sizeof(BITMAPINFOHEADER));
                 file.write(reinterpret_cast<const char*>(pixels.data()),pixels.size()*4);
@@ -424,6 +502,7 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
     app.smoke = smoke;
     app.menu=!direct || smoke; app.started=direct && !smoke;
     app.intro=!direct || smoke;
+    if (direct && !smoke) app.beginLevelIntro();
     app.screenshot = screenshot;
     app.renderer.draw(app.intro ? app.demo : app.game);
     const HINSTANCE instance = GetModuleHandleW(nullptr);
