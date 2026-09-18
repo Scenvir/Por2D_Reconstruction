@@ -318,7 +318,8 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             DrawTextW(dc, L"Completed!  R: play again    Esc: levels", -1, &area, DT_CENTER | DT_SINGLELINE);
         }
         if(!app->menu) {
-            const std::string caption = "Level" + std::to_string(app->game.level().id) + "  " + app->game.level().name;
+            const auto entry=std::find(app->levels.begin(),app->levels.end(),app->game.level().id);
+            const std::string caption = "Level" + std::to_string(entry-app->levels.begin()) + "  " + app->game.level().name;
             const std::wstring wide(caption.begin(), caption.end());
             RECT levelArea{690, 548, 975, 588};
             SetBkMode(dc, TRANSPARENT);
