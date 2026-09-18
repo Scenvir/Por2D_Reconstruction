@@ -1,0 +1,131 @@
+#include "por2/render.hpp"
+#include <algorithm>
+#include <cstdlib>
+#include <fstream>
+
+namespace por2 {
+namespace {
+constexpr std::uint32_t PlayerColor = 0xE6E67D;
+constexpr std::array<std::uint32_t, 2> PortalColors{{0x3296FF, 0xFF9632}};
+constexpr std::array<std::array<std::uint32_t, 3>, 2> PortalRamps{{
+    {{0x17477B, 0x3296FF, 0xBFEAFF}}, {{0x88401C, 0xFF9632, 0xFFE7AF}}
+}};
+std::uint32_t gradient(int id, double progress) {
+    progress = std::clamp(progress, 0.0, 1.0) * 2.0;
+    const int segment = progress < 1 ? 0 : 1;
+    const double weight = progress - segment;
+    const auto a = PortalRamps[id][segment], b = PortalRamps[id][segment + 1];
+    std::uint32_t color = 0;
+    for (int shift : {0, 8, 16}) {
+        const double value = ((a >> shift) & 255) * (1 - weight) + ((b >> shift) & 255) * weight;
+        color |= static_cast<std::uint32_t>(std::lround(value)) << shift;
+    }
+    return color;
+}
+}
+Renderer::Renderer() : pixels_(WindowWidth * WindowHeight) {}
+
+void Renderer::rectangle(int x1, int y1, int x2, int y2, std::uint32_t color) {
+    x1 = std::clamp(x1, 0, WindowWidth);
+    x2 = std::clamp(x2 + 1, 0, WindowWidth);
+    y1 = std::clamp(y1, 0, WindowHeight);
+    y2 = std::clamp(y2 + 1, 0, WindowHeight);
+    if (x1 >= x2 || y1 >= y2) return;
+    for (int y = y1; y < y2; ++y)
+        std::fill(pixels_.begin() + y * WindowWidth + x1,
+                  pixels_.begin() + y * WindowWidth + x2, color);
+}
+
+void Renderer::line(Vec2 a, Vec2 b, std::uint32_t color, int thickness) {
+    int x = static_cast<int>(std::lround(a.x)), y = static_cast<int>(std::lround(a.y));
+    const int endX = static_cast<int>(std::lround(b.x)), endY = static_cast<int>(std::lround(b.y));
+    const int dx = std::abs(endX - x);
+    const int dy = -std::abs(endY - y);
+    const int sx = x < endX ? 1 : -1;
+    const int sy = y < endY ? 1 : -1;
+    int error = dx + dy;
+    for (;;) {
+        rectangle(x, y, x + thickness - 1, y + thickness - 1, color);
+        if (x == endX && y == endY) break;
+        const int doubled = error * 2;
+        if (doubled >= dy) { error += dy; x += sx; }
+        if (doubled <= dx) { error += dx; y += sy; }
+    }
+}
+
+void Renderer::body(const Body& value, std::uint32_t color, const Portal* clip) {
+    const auto r = clip ? clipToFront(value.bounds(), *clip) : value.bounds();
+    if (r.empty()) return;
+    rectangle(static_cast<int>(std::floor(r.left)), static_cast<int>(std::floor(r.top)),
+              static_cast<int>(std::ceil(r.right)) - 1, static_cast<int>(std::ceil(r.bottom)) - 1, color);
+}
+
+void Renderer::draw(const Game& game, bool debug, bool grid) {
+    std::fill(pixels_.begin(), pixels_.end(), 0);
+    if (grid) {
+        for (int x = 0; x < WindowWidth; x += TileSize) line({x, 0}, {x, WindowHeight - 1}, 0x505050);
+        for (int y = 0; y < WindowHeight; y += TileSize) line({0, y}, {WindowWidth - 1, y}, 0x505050);
+    }
+    if (game.level().exit) body(*game.level().exit, 0xC8C8C8);
+    const int entry = game.traversal().portalIndex;
+    if (game.traversal().projection && entry >= 0)
+        body(*game.traversal().projection, PlayerColor, &game.portals()[1 - entry]);
+    body(game.player().body, PlayerColor, entry >= 0 ? &game.portals()[entry] : nullptr);
+    // Walls occlude both the real and projected bodies, as in the original.
+    for (int x = 0; x < MapWidth; ++x)
+        for (int y = 0; y < MapHeight; ++y) {
+            const auto tile = game.level().map.at(x, y);
+            if (tile == Tile::Empty) continue;
+            rectangle(x * TileSize, y * TileSize, (x + 1) * TileSize, (y + 1) * TileSize, 0);
+            rectangle(x * TileSize + 1, y * TileSize + 1, x * TileSize + 19, y * TileSize + 19,
+                      tile == Tile::PortalSurface ? 0xFFFFFF : 0x323232);
+        }
+    for (int id = 0; id < 2; ++id) {
+        const auto& portal = game.portals()[id];
+        if (!portal.active()) continue;
+        const auto frame = decode(portal);
+        for (int i = 0; i < 3; ++i) {
+            const Cell tile{portal.tile.x + (portal.horizontal() ? i : 0), portal.tile.y + (portal.horizontal() ? 0 : i)};
+            for (int along = 1; along < TileSize; ++along) {
+                const Vec2 position = por2::pixels(tile) + (portal.horizontal() ? Vec2{along, 10} : Vec2{10, along});
+                const double progress = dot(position - frame.anchor, frame.tangent) / 60.0;
+                const auto color = gradient(id, progress);
+                if (portal.horizontal()) rectangle(tile.x * TileSize + along, tile.y * TileSize + 1,
+                                                  tile.x * TileSize + along, tile.y * TileSize + 19, color);
+                else rectangle(tile.x * TileSize + 1, tile.y * TileSize + along,
+                               tile.x * TileSize + 19, tile.y * TileSize + along, color);
+            }
+            // The exposed edge makes the facing direction visible as well.
+            const Vec2 start = por2::pixels(tile);
+            if (frame.normal.x < 0) line(start + Vec2{0, 1}, start + Vec2{0, 19}, PortalColors[id], 2);
+            if (frame.normal.x > 0) line(start + Vec2{19, 1}, start + Vec2{19, 19}, PortalColors[id], 2);
+            if (frame.normal.y < 0) line(start + Vec2{1, 0}, start + Vec2{19, 0}, PortalColors[id], 2);
+            if (frame.normal.y > 0) line(start + Vec2{1, 19}, start + Vec2{19, 19}, PortalColors[id], 2);
+        }
+    }
+    for (const auto& trace : game.traces()) line(trace.origin, trace.end, PortalColors[trace.portal], 3);
+    if (debug) {
+        const auto head = game.traversal().aimOrigin;
+        const int x = static_cast<int>(std::lround(head.x)), y = static_cast<int>(std::lround(head.y));
+        rectangle(x - 1, y - 1, x + 1, y + 1, 0xFF0000);
+    }
+}
+
+void Renderer::saveBitmap(const std::filesystem::path& path) const {
+    std::ofstream file(path, std::ios::binary);
+    if (!file) throw std::runtime_error("cannot create screenshot");
+    auto word = [&](std::uint32_t value, int count) {
+        for (int i = 0; i < count; ++i) file.put(static_cast<char>((value >> (8 * i)) & 255));
+    };
+    file.put('B'); file.put('M');
+    word(54 + WindowWidth * WindowHeight * 4, 4);
+    word(0, 4); word(54, 4); word(40, 4);
+    word(WindowWidth, 4); word(WindowHeight, 4);
+    word(1, 2); word(32, 2); word(0, 4);
+    word(WindowWidth * WindowHeight * 4, 4);
+    word(0, 4); word(0, 4); word(0, 4); word(0, 4);
+    for (int y = WindowHeight - 1; y >= 0; --y)
+        for (int x = 0; x < WindowWidth; ++x) word(pixels_[y * WindowWidth + x], 4);
+    if (!file) throw std::runtime_error("cannot write screenshot");
+}
+} // namespace por2
