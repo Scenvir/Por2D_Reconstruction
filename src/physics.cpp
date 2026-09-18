@@ -96,7 +96,22 @@ bool CollisionWorld::recover(Player& player, PortalMotion& motion) const {
     return true;
 }
 bool CollisionWorld::move(Player& player, PortalMotion& motion, const MovementInput& input) const {
-    if (!finite(player.velocity) || !recover(player, motion)) return false;
+    // Check visible body pieces, including the part emerging from the other portal.
+    auto touchesBoundary = [&]() {
+        const auto touches = [](Rect r) {
+            constexpr double tolerance = 1e-6;
+            return !r.empty() && (r.left <= tolerance || r.top <= tolerance ||
+                r.right >= WindowWidth - tolerance || r.bottom >= WindowHeight - tolerance);
+        };
+        const int active = motion.activePortal;
+        if (paired() && active >= 0 && active < 2) {
+            const auto projected = transformBody(player.body, portals_[active], portals_[1 - active]);
+            return touches(clipToFront(player.body.bounds(), portals_[active])) ||
+                   touches(clipToFront(projected.bounds(), portals_[1 - active]));
+        }
+        return touches(player.body.bounds());
+    };
+    if (!finite(player.velocity) || touchesBoundary() || !recover(player, motion) || touchesBoundary()) return false;
     motion.crossings = 0;
     auto blocked = [&](Vec2 delta) {
         Body result; int next; bool crossed;
@@ -159,7 +174,9 @@ bool CollisionWorld::move(Player& player, PortalMotion& motion, const MovementIn
                 remaining = transformVector(remaining, portals_[1 - motion.activePortal], portals_[motion.activePortal]);
             if (std::abs(remaining.x) + std::abs(remaining.y) > Epsilon) segment(remaining);
         }
+        if (touchesBoundary()) return false;
     }
+    if (touchesBoundary()) return false;
     player.contacts = {blocked({0, 0.02}), blocked({0, -0.02}), blocked({-0.02, 0}), blocked({0.02, 0})};
     return canOccupy(player.body, motion.activePortal);
 }
