@@ -8,12 +8,12 @@
 
 ## 运行与构建
 
-双击 `build/por2.exe`，或在工作区根目录运行：
+双击 `build/Por2D.exe`，或在工作区根目录运行：
 
 ```powershell
-.\por2_reconstructed\build\por2.exe
+.\por2_reconstructed\build\Por2D.exe
 # 直接检查用户反馈的关卡：
-.\por2_reconstructed\build\por2.exe --level 13
+.\por2_reconstructed\build\Por2D.exe --level 13
 ```
 
 构建并运行回归测试：
@@ -131,7 +131,7 @@ F11 或 Alt+Enter 切换无边框全屏，使用窗口所在显示器。画面�
 无窗口生成截图：
 
 ```powershell
-.\por2_reconstructed\build\por2.exe --headless --level 13 --frames 60 --screenshot .\por2_reconstructed\build\map13-new.bmp | Out-String
+.\por2_reconstructed\build\Por2D.exe --headless --level 13 --frames 60 --screenshot .\por2_reconstructed\build\map13-new.bmp | Out-String
 ```
 
 隐藏窗口自动检查：
@@ -139,5 +139,5 @@ F11 或 Alt+Enter 切换无边框全屏，使用窗口所在显示器。画面�
 覆盖菜单进入游戏、map16 鼠标选关、菜单暂停与射击隔离、全屏切换及窗口尺寸恢复、缩放坐标转换，以及原有键鼠与绘制流程。指定截图时，同时生成追加 `.menu.bmp` 后缀的菜单截图。
 
 ```powershell
-.\por2_reconstructed\build\por2.exe --window-smoke-test --screenshot .\por2_reconstructed\build\window-smoke.bmp | Out-String
+.\por2_reconstructed\build\Por2D.exe --window-smoke-test --screenshot .\por2_reconstructed\build\window-smoke.bmp | Out-String
 ```

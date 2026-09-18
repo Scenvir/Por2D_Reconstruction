@@ -411,8 +411,8 @@ int main(int argc, char** argv) {
             else if (argument == "--frames" && i + 1 < argc) frames = std::stoi(argv[++i]);
             else if (argument == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
             else if (argument == "--help") {
-                std::cout << "por2.exe [--fullscreen] [--level ID] [--headless --frames N --screenshot path.bmp]\n"
-                             "por2.exe --window-smoke-test [--screenshot path.bmp]\n";
+                std::cout << "Por2D.exe [--fullscreen] [--level ID] [--headless --frames N --screenshot path.bmp]\n"
+                             "Por2D.exe --window-smoke-test [--screenshot path.bmp]\n";
                 return 0;
             } else throw std::invalid_argument("unknown or incomplete argument: " + argument);
         }
