@@ -452,6 +452,8 @@ Level map15() {
     level.map.fill(static_cast<Tile>(1), 12, 18, 12, 20);
     level.map.fill(static_cast<Tile>(1), 36, 18, 36, 20);
     level.map.fill(static_cast<Tile>(1), 26, 9, 28, 9);
+    level.map.fill(static_cast<Tile>(2), 23, 20, 25, 20);
+    level.map.fill(static_cast<Tile>(0), 20, 21, 28, 21);
     exit.position.x = 580;
     exit.position.y = 320;
     exit.direction = Direction::Up;
@@ -478,6 +480,8 @@ Level map16() {
     level.map.fill(static_cast<Tile>(1), 12, 18, 12, 20);
     level.map.fill(static_cast<Tile>(1), 36, 18, 36, 20);
     level.map.fill(static_cast<Tile>(1), 26, 9, 28, 9);
+    level.map.fill(static_cast<Tile>(2), 23, 20, 25, 20);
+    level.map.fill(static_cast<Tile>(0), 20, 21, 28, 21);
     exit.position.x = 360;
     exit.position.y = 320;
     exit.direction = Direction::Up;
