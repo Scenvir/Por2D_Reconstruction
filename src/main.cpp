@@ -46,6 +46,7 @@ struct Application {
     bool debug = true;
     bool grid = false;
     int previewPortal = 0;
+    bool previewEnabled = true;
     bool exitPressed = false;
     std::string title;
     bool smoke = false;
@@ -121,6 +122,17 @@ struct Application {
                 SendMessageW(window, WM_KEYDOWN, 'D', 0);
             }
             if (smokeTicks == 8) SendMessageW(window, WM_KEYUP, 'D', 0);
+            if (smokeTicks == 2) {
+                SendMessageW(window,WM_KEYDOWN,'Q',0);
+                SendMessageW(window,WM_KEYDOWN,'Q',static_cast<LPARAM>(1LL<<30));
+                if(previewEnabled) throw std::runtime_error("Q must disable preview once per press");
+                SendMessageW(window,WM_KEYUP,'Q',0);
+            }
+            if (smokeTicks == 3) {
+                SendMessageW(window,WM_KEYDOWN,'Q',0);
+                if(!previewEnabled) throw std::runtime_error("Q must restore preview");
+                SendMessageW(window,WM_KEYUP,'Q',0);
+            }
             if (smokeTicks == 9) {
                 SendMessageW(window, WM_LBUTTONDOWN, 0, MAKELPARAM(260, 389));
                 SendMessageW(window, WM_LBUTTONUP, 0, MAKELPARAM(260, 389));
@@ -194,14 +206,14 @@ struct Application {
         if(smoke && menu && (before.x!=game.player().body.position.x || before.y!=game.player().body.position.y))
             throw std::runtime_error("menu did not freeze physics");
         std::optional<por2::Shot> preview;
-        if (!menu && !smoke && GetForegroundWindow()==window) {
+        if (previewEnabled && !menu && !smoke && GetForegroundWindow()==window) {
             POINT cursor{};
             if (GetCursorPos(&cursor) && ScreenToClient(window,&cursor)) {
                 const auto point=logicalPoint(window,cursor.x,cursor.y);
                 if (point) preview=por2::Shot{previewPortal,*point};
             }
         }
-        if(smoke && smokeTicks==10) preview=por2::Shot{0,{260,389}};
+        if(previewEnabled && smoke && smokeTicks==10) preview=por2::Shot{0,{260,389}};
         renderer.draw(game, debug, grid, preview);
         const std::string nextTitle = game.finished()
             ? "Por2D - Completed! R: play again | Esc: menu | F11: fullscreen"
@@ -251,6 +263,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             }
             if (key == VK_F1) app->debug = !app->debug;
             if (key == VK_F2) app->grid = !app->grid;
+            if (key == 'Q') app->previewEnabled = !app->previewEnabled;
         }
         if(message==WM_SYSKEYDOWN) return DefWindowProcW(window,message,wparam,lparam);
         return 0;

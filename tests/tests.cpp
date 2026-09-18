@@ -72,6 +72,11 @@ void placementPreview() {
         const Vec2 center=pixels(portals[id].tile)+(portals[id].horizontal()?Vec2{30,10}:Vec2{10,30});
         expect(preview.pixels()[static_cast<int>(center.y)*WindowWidth+static_cast<int>(center.x)]==
                0x50E080u,"both portal previews use green at actual placement");
+        const Vec2 forward=decode(portals[id]).tangent*-1;
+        const Vec2 side{-forward.y,forward.x};
+        const Vec2 wing=center+forward*3+side*4;
+        expect(preview.pixels()[static_cast<int>(wing.y)*WindowWidth+static_cast<int>(wing.x)]==0x50E080u,
+               "preview arrowhead points toward headward portal direction");
     }
     preview.draw(game,true,false,Shot{0,game.traversal().aimOrigin});
     expect(!game.portals()[0].active(),"invalid preview never places portal");

@@ -134,8 +134,13 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
                 }
             }
             const Vec2 middle = por2::pixels(portal.tile) + (portal.horizontal() ? Vec2{30,10} : Vec2{10,30});
-            line(middle-Vec2{3,0},middle+Vec2{3,0},color);
-            line(middle-Vec2{0,3},middle+Vec2{0,3},color);
+            // Headward direction matches the tutorial diagram (light to dark).
+            const Vec2 forward = decode(portal).tangent * -1;
+            const Vec2 side{-forward.y,forward.x};
+            const Vec2 tip = middle + forward * 8;
+            line(middle-forward*8,tip,color,2);
+            line(tip,tip-forward*5+side*4,color,2);
+            line(tip,tip-forward*5-side*4,color,2);
         } else {
             line(end-Vec2{4,4},end+Vec2{4,4},color,2);
             line(end+Vec2{-4,4},end+Vec2{4,-4},color,2);
