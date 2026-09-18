@@ -70,13 +70,29 @@ void placementPreview() {
         expect(!game.portals()[0].active() && !game.portals()[1].active() && near(position,game.player().body.position),
                "preview must not mutate game");
         const Vec2 center=pixels(portals[id].tile)+(portals[id].horizontal()?Vec2{30,10}:Vec2{10,30});
-        expect(preview.pixels()[static_cast<int>(center.y)*WindowWidth+static_cast<int>(center.x)]==
-               0x50E080u,"both portal previews use green at actual placement");
         const Vec2 forward=decode(portals[id]).tangent*-1;
         const Vec2 side{-forward.y,forward.x};
-        const Vec2 wing=center+forward*3+side*4;
-        expect(preview.pixels()[static_cast<int>(wing.y)*WindowWidth+static_cast<int>(wing.x)]==0x50E080u,
-               "preview arrowhead points toward headward portal direction");
+        for (int candidate=0;candidate<2;++candidate) {
+            const Vec2 arrow=center+side*(candidate==0?-5.0:5.0);
+            const auto color=candidate==0?0x3296FFu:0xFF9632u;
+            expect(preview.pixels()[static_cast<int>(arrow.y)*WindowWidth+static_cast<int>(arrow.x)]==color,
+                   "both available portal colors appear side by side regardless of selected portal");
+            const Vec2 wing=arrow+forward*3+side*3;
+            expect(preview.pixels()[static_cast<int>(wing.y)*WindowWidth+static_cast<int>(wing.x)]==color,
+                   "colored preview arrowhead points headward");
+        }
+    }
+    for (int placed=0;placed<2;++placed) {
+        Game occupied;
+        InputFrame input;
+        input.shots.push_back(Shot{placed,{260,389}});
+        occupied.tick(input);
+        const auto& portal=occupied.portals()[placed];
+        expect(portal.active(),"single-color preview fixture");
+        const Vec2 center=pixels(portal.tile)+(portal.horizontal()?Vec2{30,10}:Vec2{10,30});
+        preview.draw(occupied,false,false,Shot{1-placed,{260,389}});
+        expect(preview.pixels()[static_cast<int>(center.y)*WindowWidth+static_cast<int>(center.x)]==
+               (placed==0?0x3296FFu:0xFF9632u),"only placeable portal color is centered even when other color is selected");
     }
     preview.draw(game,true,false,Shot{0,game.traversal().aimOrigin});
     expect(!game.portals()[0].active(),"invalid preview never places portal");

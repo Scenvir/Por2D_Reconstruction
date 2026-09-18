@@ -106,9 +106,16 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
     for (const auto& trace : game.traces()) line(trace.origin, trace.end, PortalColors[trace.portal], 3);
     if (preview && !game.finished()) {
         // Use the real firing rules on a copy: preview never changes live portals.
-        auto portals = game.portals();
-        std::vector<ShotTrace> traces;
-        const bool valid = firePortal(game.level().map, game.player(), game.motion(), portals, *preview, traces);
+        std::array<bool, 2> available{};
+        std::array<Portal, 2> candidates{};
+        for (int id = 0; id < 2; ++id) {
+            auto portals = game.portals();
+            std::vector<ShotTrace> traces;
+            available[id] = firePortal(game.level().map, game.player(), game.motion(),
+                                       portals, Shot{id, preview->target}, traces);
+            candidates[id] = portals[id];
+        }
+        const bool valid = available[0] || available[1];
         const Vec2 origin = game.traversal().aimOrigin;
         const auto hit = castShot(game.level().map, origin, preview->target);
         const Vec2 end = hit ? hit->point : preview->target;
@@ -118,7 +125,9 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
         for (double d = 0; d < length; d += 12)
             line(origin + ray * (d / length), origin + ray * (std::min(d + 4, length) / length), color);
         if (valid) {
-            const auto& portal = portals[preview->portal];
+            for (int id = 0; id < 2; ++id) {
+            if (!available[id]) continue;
+            const auto& portal = candidates[id];
             // Only outline the three tiles, preserving visibility of the wall.
             for (int i = 0; i < 3; ++i) {
                 const Vec2 tile = por2::pixels(portal.tile) + (portal.horizontal() ? Vec2{i*20,0} : Vec2{0,i*20});
@@ -137,14 +146,28 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
             // Headward direction matches the tutorial diagram (light to dark).
             const Vec2 forward = decode(portal).tangent * -1;
             const Vec2 side{-forward.y,forward.x};
-            const Vec2 tip = middle + forward * 8;
-            line(middle-forward*8,tip,color,2);
-            line(tip,tip-forward*5+side*4,color,2);
-            line(tip,tip-forward*5-side*4,color,2);
+            const Vec2 center = middle + side * (available[0] && available[1] ? (id == 0 ? -5.0 : 5.0) : 0.0);
+            const Vec2 tip = center + forward * 8;
+            line(center-forward*8,tip,PortalColors[id],2);
+            line(tip,tip-forward*5+side*3,PortalColors[id],2);
+            line(tip,tip-forward*5-side*3,PortalColors[id],2);
+            }
         } else {
             line(end-Vec2{4,4},end+Vec2{4,4},color,2);
             line(end+Vec2{-4,4},end+Vec2{4,-4},color,2);
         }
+    }
+    // Draw last so aiming previews cannot hide the locked portal's thin outline.
+    const int locked = game.traversal().lockedPortal;
+    if (locked >= 0 && game.portals()[locked].active()) {
+        const auto& portal = game.portals()[locked];
+        const Vec2 topLeft = por2::pixels(portal.tile);
+        const Vec2 bottomRight = topLeft + (portal.horizontal() ? Vec2{60, 20} : Vec2{20, 60});
+        constexpr std::uint32_t LockColor = 0xFFD700;
+        line(topLeft, {bottomRight.x, topLeft.y}, LockColor);
+        line({bottomRight.x, topLeft.y}, bottomRight, LockColor);
+        line(bottomRight, {topLeft.x, bottomRight.y}, LockColor);
+        line({topLeft.x, bottomRight.y}, topLeft, LockColor);
     }
     if (debug) {
         const auto head = game.traversal().aimOrigin;
