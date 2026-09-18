@@ -112,20 +112,18 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
         const Vec2 origin = game.traversal().aimOrigin;
         const auto hit = castShot(game.level().map, origin, preview->target);
         const Vec2 end = hit ? hit->point : preview->target;
-        const auto color = valid ? PortalColors[preview->portal] : 0xEF7070u;
+        const auto color = valid ? 0x50E080u : 0xEF7070u;
         const Vec2 ray = end - origin;
         const double length = std::sqrt(dot(ray, ray));
         for (double d = 0; d < length; d += 12)
             line(origin + ray * (d / length), origin + ray * (std::min(d + 4, length) / length), color);
         if (valid) {
             const auto& portal = portals[preview->portal];
-            const auto frame = decode(portal);
             // Only outline the three tiles, preserving visibility of the wall.
             for (int i = 0; i < 3; ++i) {
                 const Vec2 tile = por2::pixels(portal.tile) + (portal.horizontal() ? Vec2{i*20,0} : Vec2{0,i*20});
                 for (int n = 1; n < 20; ++n) {
-                    const Vec2 p = tile + (portal.horizontal() ? Vec2{n,10} : Vec2{10,n});
-                    const auto shade = gradient(preview->portal, dot(p-frame.anchor,frame.tangent)/60.0);
+                    const auto shade = color;
                     if (portal.horizontal()) {
                         line(tile+Vec2{n,1},tile+Vec2{n,2},shade);
                         line(tile+Vec2{n,18},tile+Vec2{n,19},shade);

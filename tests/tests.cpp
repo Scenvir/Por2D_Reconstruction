@@ -71,7 +71,7 @@ void placementPreview() {
                "preview must not mutate game");
         const Vec2 center=pixels(portals[id].tile)+(portals[id].horizontal()?Vec2{30,10}:Vec2{10,30});
         expect(preview.pixels()[static_cast<int>(center.y)*WindowWidth+static_cast<int>(center.x)]==
-               (id==0?0x3296FFu:0xFF9632u),"preview center matches real placement");
+               0x50E080u,"both portal previews use green at actual placement");
     }
     preview.draw(game,true,false,Shot{0,game.traversal().aimOrigin});
     expect(!game.portals()[0].active(),"invalid preview never places portal");
