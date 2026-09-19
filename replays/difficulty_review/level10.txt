@@ -1,0 +1,51 @@
+# Difficulty review 2026-09-20: displayed Level 10, source ID 12
+# Origin: build/difficulty_audit/search_12.txt
+# Verified normal exit; representative route, not a shortest-path claim.
+level 12
+a 8
+z 3
+s 0 260 339.9
+dw 8
+dw 8
+s 1 520 240.1
+aw 3
+s 0 260 300.1
+s 0 379.9 200
+d 3
+w 3
+a 8
+aw 8
+z 8
+z 8
+d 8
+dw 8
+s 1 379.9 360
+w 8
+dw 3
+d 8
+d 8
+d 8
+s 0 520 240.1
+d 3
+dw 8
+z 8
+dw 8
+z 8
+dw 8
+dw 8
+dw 8
+d 8
+dw 8
+s 1 720 380.1
+a 3
+s 1 720 380.1
+d 3
+w 8
+s 0 379.9 200
+d 8
+d 8
+d 8
+s 0 520 240.1
+d 8
+a 3
+e 1

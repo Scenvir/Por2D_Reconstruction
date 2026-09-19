@@ -1,4 +1,5 @@
 #include "por2/render.hpp"
+#include "por2/replay.hpp"
 #include "legacy_bridge.hpp"
 #include <functional>
 #include <iostream>
@@ -18,6 +19,43 @@ std::string pose(const Player& p) {
     std::ostringstream s;
     s << p.body.position.x << ',' << p.body.position.y << " v=" << p.velocity.x << ',' << p.velocity.y;
     return s.str();
+}
+
+void scriptReplay() {
+    std::istringstream text("\xEF\xBB\xBF# comment\nlevel 0\nd 2\nz 1\ns 0 260 389\ne 1\n");
+    const auto script=ReplayScript::parse(text);
+    expect(script.level==0 && script.totalFrames==5 && script.actions.size()==4,"script BOM, comments and frame count");
+    Game actual(5), reference(0);
+    Replay replay; replay.start(script,5,actual);
+    for (const auto& action:script.actions) for (int i=0;i<action.frames;++i) {
+        reference.tick(action.input); replay.step(actual);
+        expect(near(actual.player().body.position,reference.player().body.position) &&
+               near(actual.player().velocity,reference.player().velocity),"replay matches direct per-frame inputs");
+    }
+    expect(replay.completed && replay.frame==5 && !replay.cleared,"script completion is not victory");
+    const auto final=actual.player().body.position;
+    replay.step(actual);
+    expect(actual.player().body.position==final && replay.frame==5,"completed replay freezes");
+    replay.restart(actual);
+    expect(replay.frame==0 && !replay.completed && actual.level().id==0 &&
+           actual.player().body.position==actual.level().spawn.position,"replay restarts original map");
+    std::istringstream exitText("level 0\ndw 180\ne 1\n");
+    auto exitScript=ReplayScript::parse(exitText);
+    exitScript.actions.clear();
+    ScriptAction exitAction; exitAction.input.useExit=true; exitAction.frames=1;
+    exitScript.actions.push_back(exitAction); exitScript.totalFrames=1;
+    replay.start(exitScript,0,actual);
+    const_cast<Player&>(actual.player()).body=*actual.level().exit;
+    replay.step(actual);
+    expect(replay.cleared && replay.completed && actual.level().id==5,"exit ends replay at next level");
+    for (const auto* invalid:{"", "a 0", "d -1", "z 1000001", "s 2 1 2", "s 0 nan 1",
+            "a 2 junk", "unknown 1", "level 99\nz 1", "z 1\nlevel 0", "level 0\nlevel 1\nz 1",
+            "z 1000000\nz 1", "s 0 1", "a 1.5"}) {
+        bool rejected=false;
+        try { std::istringstream input(invalid); ReplayScript::parse(input); }
+        catch (const std::exception&) { rejected=true; }
+        expect(rejected,"invalid script rejected");
+    }
 }
 
 void boundaryRestart() {
@@ -494,6 +532,7 @@ void stress() {
 
 int main() {
     const std::pair<const char*, std::function<void()>> suites[]{
+        {"script parsing, exact frame playback, restart and completion", scriptReplay},
         {"boundary contact restarts current level", boundaryRestart},
         {"non-mutating placement preview and actual portal position", placementPreview},
         {"editable level data and 64 invertible portal transforms", mapsAndTransforms},

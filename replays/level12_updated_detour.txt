@@ -1,0 +1,85 @@
+# Current Level 12, verified in the three-minute search
+level 16
+d 8
+d 3
+dw 8
+s 1 80 200.1
+a 8
+a 8
+s 1 179.9 80
+a 8
+a 8
+a 8
+s 0 80 200.1
+a 8
+a 8
+a 8
+z 8
+a 8
+s 0 80 200.1
+z 8
+d 8
+dw 8
+s 1 360 200.1
+a 8
+a 8
+a 8
+a 8
+z 8
+a 8
+z 3
+s 1 239.9 240
+s 0 360 200.1
+dw 8
+d 3
+d 8
+dw 8
+w 8
+s 0 360 219.9
+d 3
+d 3
+a 8
+a 8
+z 3
+aw 8
+a 8
+a 8
+s 1 80 200.1
+z 3
+d 8
+d 8
+w 3
+d 8
+s 0 239.9 240
+w 3
+s 1 160.1 80
+s 1 179.9 80
+z 8
+a 3
+a 8
+a 8
+a 8
+z 8
+z 8
+d 8
+s 0 140.1 400
+z 3
+z 3
+z 8
+s 1 179.9 80
+a 8
+a 8
+a 8
+s 1 80 200.1
+aw 8
+z 8
+a 8
+d 3
+d 8
+d 8
+d 8
+d 3
+d 8
+d 8
+d 8
+e 1

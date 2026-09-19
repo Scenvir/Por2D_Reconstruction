@@ -1,0 +1,32 @@
+# Difficulty review 2026-09-20: displayed Level 9, source ID 11
+# Origin: build/difficulty_audit/play11novel_block0.txt
+# Verified normal exit; representative route, not a shortest-path claim.
+level 11
+s 0 260 380.1
+a 3
+a 8
+s 1 319.9 320
+a 8
+a 8
+z 8
+s 1 520 240.1
+a 3
+a 8
+a 8
+d 8
+s 0 520 300.1
+dw 8
+d 8
+z 8
+d 3
+s 0 520 340.1
+d 8
+z 3
+d 8
+s 1 720 380.1
+w 3
+a 8
+dw 8
+a 8
+a 8
+e 1

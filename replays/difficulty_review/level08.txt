@@ -1,0 +1,44 @@
+# Difficulty review 2026-09-20: displayed Level 8, source ID 14
+# Origin: build/difficulty_audit/play14_block0.txt
+# Verified normal exit; representative route, not a shortest-path claim.
+level 14
+s 0 359.9 200
+s 1 260 360.1
+aw 8
+aw 8
+a 8
+a 8
+z 8
+aw 8
+a 8
+z 8
+w 8
+a 8
+dw 8
+z 8
+dw 8
+z 8
+dw 8
+dw 8
+w 8
+s 0 720 380.1
+a 8
+aw 8
+z 8
+aw 8
+w 8
+a 8
+aw 8
+z 8
+s 1 260 360.1
+z 8
+a 8
+s 1 359.9 200
+d 8
+z 3
+a 8
+s 1 260 360.1
+a 8
+a 8
+a 8
+e 1

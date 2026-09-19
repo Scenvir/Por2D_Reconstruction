@@ -1,0 +1,72 @@
+# Level 12 / source map 16; fixed downward gravity version
+level 16
+d 9
+d 9
+dw 4
+s 1 80 200.1
+a 9
+a 9
+s 0 179.9 80
+a 4
+a 9
+a 4
+z 9
+a 9
+a 9
+z 9
+a 9
+s 1 80 200.1
+d 9
+d 9
+dw 9
+s 0 360 200.1
+a 9
+a 4
+a 9
+a 9
+a 9
+a 9
+z 4
+s 1 239.9 240
+s 0 360 200.1
+dw 9
+dw 9
+d 9
+dw 9
+d 9
+a 9
+a 9
+z 4
+a 9
+s 1 80 200.1
+d 9
+d 9
+dw 9
+s 0 239.9 240
+w 4
+s 1 160.1 80
+s 1 179.9 80
+z 9
+a 9
+a 9
+a 9
+z 9
+d 9
+s 0 140.1 400
+a 4
+z 9
+a 9
+a 9
+a 9
+d 1
+s 1 80 200.1
+a 9
+s 0 159.9 400
+dw 4
+d 9
+d 9
+d 9
+d 9
+d 4
+d 9
+e 1

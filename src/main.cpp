@@ -2,6 +2,8 @@
 #define NOMINMAX
 #include <windows.h>
 #include <windowsx.h>
+#include <commdlg.h>
+#include "por2/replay.hpp"
 #include "por2/render.hpp"
 #include <iostream>
 #include <string>
@@ -49,6 +51,54 @@ struct Application {
     }
     por2::Game game;
     por2::Renderer renderer;
+    por2::Replay replay;
+    bool replaySlow=false, replaySingle=false, importing=false;
+    int replayClock=0, aimTicks=0;
+    std::optional<por2::Shot> replayAim;
+    void startReplay(por2::ReplayScript script) {
+        replay.start(std::move(script),menu?levels[selected]:game.level().id,game);
+        intro=false; menu=false; started=true; endLevelIntro();
+        replayClock=aimTicks=0; replaySingle=false; replayAim.reset();
+        renderer.draw(game,debug,grid);
+    }
+    void importReplay(HWND window) {
+        const bool wasPaused=replay.paused;
+        replay.paused=true; importing=true; clearInput();
+        wchar_t path[32768]{};
+        OPENFILENAMEW dialog{}; dialog.lStructSize=sizeof(dialog);
+        dialog.hwndOwner=window; dialog.lpstrFile=path; dialog.nMaxFile=32768;
+        dialog.lpstrFilter=L"操作脚本 (*.txt)\0*.txt\0所有文件\0*.*\0";
+        dialog.lpstrTitle=L"导入回放（无 level 指令时使用当前选中关卡）";
+        dialog.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
+        if (GetOpenFileNameW(&dialog)) {
+            try { startReplay(por2::ReplayScript::load(std::filesystem::path(path))); }
+            catch(const std::exception& error) {
+                MessageBoxW(window,utf8(error.what()).c_str(),L"脚本导入失败",MB_OK|MB_ICONERROR);
+                replay.paused=wasPaused;
+            }
+        } else replay.paused=wasPaused;
+        importing=false; clearInput(); InvalidateRect(window,nullptr,FALSE);
+    }
+    void drawReplay(HDC dc) const {
+        if (!replay.active) return;
+        if (replayAim && aimTicks>0) {
+            const int x=static_cast<int>(std::clamp(replayAim->target.x,0.0,999.0));
+            const int y=static_cast<int>(std::clamp(replayAim->target.y,0.0,599.0));
+            HPEN pen=CreatePen(PS_SOLID,2,replayAim->portal==0?RGB(70,170,255):RGB(255,160,60));
+            auto old=SelectObject(dc,pen);
+            MoveToEx(dc,x-10,y,nullptr); LineTo(dc,x+11,y);
+            MoveToEx(dc,x,y-10,nullptr); LineTo(dc,x,y+11);
+            SelectObject(dc,old); DeleteObject(pen);
+        }
+        fill(dc,{10,465,990,544},RGB(15,21,34));
+        const std::wstring state=replay.completed?(replay.cleared?L"过关成功":L"脚本结束（未过关）"):(replay.paused?L"已暂停":L"播放中");
+        const std::wstring command=replay.lastAction<0?L"准备开始":utf8(replay.script.actions[replay.lastAction].text);
+        label(dc,{15,467,985,493},state+L"  "+(replaySlow?L"0.25×":L"1×")+L"  帧 "+
+            std::to_wstring(replay.frame)+L"/"+std::to_wstring(replay.script.totalFrames)+L"  当前: "+command,18,RGB(240,245,255));
+        label(dc,{15,494,985,520},L"空格 暂停/继续 · . 单帧 · R 重播 · F8 慢速 · F7 退出 · F6 导入",17,RGB(150,195,230));
+        fill(dc,{20,532,980,538},RGB(45,58,76));
+        fill(dc,{20,532,20+960*replay.frame/replay.script.totalFrames,538},RGB(80,185,235));
+    }
     std::array<bool, 256> keys{};
     std::array<bool, 2> mousePressed{};
     std::vector<por2::Shot> shots;
@@ -137,6 +187,7 @@ struct Application {
         fullscreen=!fullscreen; InvalidateRect(window,nullptr,FALSE);
     }
     void startSelected() {
+        replay.active=false;
         game=por2::Game(levels[selected]); menu=false; started=true; clearInput();
         beginLevelIntro();
         renderer.draw(game,debug,grid);
@@ -154,7 +205,7 @@ struct Application {
     void drawMenu(HDC dc) const {
         fill(dc,{0,0,1000,600},RGB(15,21,34));
         label(dc,{60,25,940,82},L"Por2D  /  选择关卡",36,RGB(235,242,255));
-        label(dc,{60,85,940,120},L"点击关卡开始  ·  方向键选择 / Enter 开始  ·  F11 全屏",18,RGB(150,173,201));
+        label(dc,{60,85,940,120},L"点击关卡开始  ·  方向键 / Enter 开始  ·  F6 导入脚本  ·  F11 全屏",18,RGB(150,173,201));
         const int first=(selected/15)*15;
         for(int i=first;i<std::min(first+15,static_cast<int>(levels.size()));++i) {
             RECT r=card(i-first); fill(dc,r,i==selected?RGB(35,110,174):RGB(31,43,61));
@@ -171,6 +222,7 @@ struct Application {
     }
 
     void update(HWND window) {
+        if (importing) return;
         if (intro && !smoke) {
             updateDemo();
             InvalidateRect(window,nullptr,FALSE);
@@ -277,6 +329,32 @@ struct Application {
                 SendMessageW(window,WM_KEYUP,'E',0);
             }
             if (smokeTicks == 15) {
+                smoke=false;
+                std::istringstream sample("level 0\nd 2\ns 0 260 389\nz 1\n");
+                startReplay(por2::ReplayScript::parse(sample));
+                SendMessageW(window,WM_KEYDOWN,VK_SPACE,0);
+                update(window);
+                if(replay.frame!=0) throw std::runtime_error("paused replay advanced");
+                SendMessageW(window,WM_KEYDOWN,VK_OEM_PERIOD,0);
+                update(window);
+                if(replay.frame!=1 || !replay.paused) throw std::runtime_error("replay single frame failed");
+                SendMessageW(window,WM_KEYDOWN,'R',0);
+                SendMessageW(window,WM_KEYDOWN,VK_F8,0);
+                for(int i=0;i<3;++i) update(window);
+                if(replay.frame!=0) throw std::runtime_error("slow replay advanced early");
+                update(window);
+                if(replay.frame!=1) throw std::runtime_error("slow replay timing failed");
+                SendMessageW(window,WM_KEYDOWN,VK_F8,0);
+                for(int i=0;i<3;++i) update(window);
+                if(!replay.completed || replay.frame!=4 || !replayAim)
+                    throw std::runtime_error("replay completion or shot visualization failed");
+                const auto frozen=game.player().body.position;
+                update(window);
+                if(game.player().body.position!=frozen) throw std::runtime_error("finished replay did not freeze");
+                smoke=true;
+                SendMessageW(window,WM_PAINT,0,0);
+                SendMessageW(window,WM_KEYDOWN,VK_F7,0);
+                if(replay.active) throw std::runtime_error("replay stop failed");
                 if (!paintCount) throw std::runtime_error("window smoke: paint callback was never called");
                 DestroyWindow(window);
                 return;
@@ -297,13 +375,24 @@ struct Application {
         const auto before=game.player().body.position;
         const int previousLevel=game.level().id;
         const bool previouslyFinished=game.finished();
-        if(!menu) game.tick(input);
-        if (game.level().id!=previousLevel || (previouslyFinished && !game.finished()))
+        if(!menu) {
+            if (replay.active) {
+                if (!replay.completed && (replaySingle || (!replay.paused && ++replayClock >= (replaySlow?4:1)))) {
+                    replayClock=0;
+                    replay.step(game);
+                    if (aimTicks>0) --aimTicks;
+                    const auto& action=replay.script.actions[replay.lastAction];
+                    if (!action.input.shots.empty()) { replayAim=action.input.shots.front(); aimTicks=15; }
+                }
+                replaySingle=false;
+            } else game.tick(input);
+        }
+        if (!replay.active && (game.level().id!=previousLevel || (previouslyFinished && !game.finished())))
             beginLevelIntro();
         if(smoke && menu && (before.x!=game.player().body.position.x || before.y!=game.player().body.position.y))
             throw std::runtime_error("menu did not freeze physics");
         std::optional<por2::Shot> preview;
-        if (previewEnabled && !menu && !smoke && GetForegroundWindow()==window) {
+        if (previewEnabled && !replay.active && !menu && !smoke && GetForegroundWindow()==window) {
             POINT cursor{};
             if (GetCursorPos(&cursor) && ScreenToClient(window,&cursor)) {
                 const auto point=logicalPoint(window,cursor.x,cursor.y);
@@ -342,6 +431,24 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     case WM_SYSKEYUP: {
         const bool pressed = message != WM_KEYUP && message != WM_SYSKEYUP;
         unsigned key = static_cast<unsigned>(wparam);
+        if (pressed && !(lparam & (1LL<<30)) && key==VK_F6) {
+            app->importReplay(window); return 0;
+        }
+        if (app->replay.active && !app->menu && key!=VK_ESCAPE && key!=VK_F11 && key!=VK_F1 && key!=VK_F2) {
+            if (pressed && !(lparam & (1LL<<30))) {
+                if (key==VK_SPACE && !app->replay.completed) app->replay.paused=!app->replay.paused;
+                if (key==VK_OEM_PERIOD) { app->replay.paused=true; app->replaySingle=true; }
+                if (key=='R') {
+                    app->replay.restart(app->game); app->replayClock=app->aimTicks=0;
+                    app->replaySingle=false; app->replayAim.reset(); app->clearInput();
+                    app->renderer.draw(app->game,app->debug,app->grid);
+                }
+                if (key==VK_F8) { app->replaySlow=!app->replaySlow; app->replayClock=0; }
+                if (key==VK_F7) { app->replay.active=false; app->clearInput(); }
+                InvalidateRect(window,nullptr,FALSE);
+            }
+            return 0;
+        }
         if (key==app->suppressedKey) {
             if (!pressed) app->suppressedKey=256;
             return 0;
@@ -385,6 +492,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     }
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
+        if(app->replay.active && !app->menu) return 0;
         if(app->levelIntroActive() && !app->menu) {
             app->endLevelIntro();
             InvalidateRect(window,nullptr,FALSE);
@@ -415,6 +523,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         app->mousePressed = {};
         return 0;
     case WM_KILLFOCUS:
+        if(app->replay.active) app->replay.paused=true;
         app->clearInput();
         return 0;
     case WM_ERASEBKGND:
@@ -453,6 +562,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             SetTextColor(dc, RGB(220, 230, 245));
             DrawTextW(dc, wide.c_str(), -1, &levelArea, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
         }
+        if(!app->menu && !app->intro) app->drawReplay(dc);
         RECT client{}; GetClientRect(window,&client);
         const RECT view=viewport(window);
         // Compose the scaled scene AND letterboxing offscreen. Clearing the visible
@@ -468,7 +578,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             SelectObject(frame,oldFrame); DeleteObject(frameBitmap); DeleteDC(frame);
         }
         SelectObject(dc,oldBitmap);
-        if(app->smoke && (app->smokeTicks==13 || app->intro || app->levelIntroActive()) && !app->screenshot.empty()) {
+        if(app->smoke && (app->smokeTicks==13 || app->intro || app->levelIntroActive() || app->replay.active) && !app->screenshot.empty()) {
             std::vector<std::uint32_t> pixels(1000*600);
             if(!GetDIBits(dc,bitmap,0,600,pixels.data(),&info,DIB_RGB_COLORS))
                 app->failure="menu screenshot failed";
@@ -476,7 +586,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
                 BITMAPFILEHEADER header{}; header.bfType=0x4d42;
                 header.bfOffBits=sizeof(header)+sizeof(BITMAPINFOHEADER);
                 header.bfSize=header.bfOffBits+static_cast<DWORD>(pixels.size()*4);
-                std::ofstream file(app->screenshot+(app->intro?".intro.bmp":app->levelIntroActive()?".level-intro.bmp":".menu.bmp"),std::ios::binary);
+                std::ofstream file(app->screenshot+(app->replay.active?".replay.bmp":app->intro?".intro.bmp":app->levelIntroActive()?".level-intro.bmp":".menu.bmp"),std::ios::binary);
                 file.write(reinterpret_cast<const char*>(&header),sizeof(header));
                 file.write(reinterpret_cast<const char*>(&info.bmiHeader),sizeof(BITMAPINFOHEADER));
                 file.write(reinterpret_cast<const char*>(pixels.data()),pixels.size()*4);
@@ -496,13 +606,14 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     }
 }
 
-int runWindow(int level, bool smoke, const std::string& screenshot, bool direct, bool fullscreen) {
+int runWindow(int level, bool smoke, const std::string& screenshot, bool direct, bool fullscreen, const std::optional<por2::ReplayScript>& script) {
     SetProcessDPIAware();
     Application app(level);
     app.smoke = smoke;
     app.menu=!direct || smoke; app.started=direct && !smoke;
     app.intro=!direct || smoke;
     if (direct && !smoke) app.beginLevelIntro();
+    if (script) app.startReplay(*script);
     app.screenshot = screenshot;
     app.renderer.draw(app.intro ? app.demo : app.game);
     const HINSTANCE instance = GetModuleHandleW(nullptr);
@@ -541,7 +652,8 @@ int main(int argc, char** argv) {
     try {
         int level = 0;
         int frames = 60;
-        bool headless = false;
+        bool headless = false, framesSpecified=false;
+        std::string replayPath;
         bool windowSmoke = false;
         bool direct=false, fullscreen=false;
         std::string screenshot;
@@ -551,25 +663,45 @@ int main(int argc, char** argv) {
             else if (argument == "--window-smoke-test") windowSmoke = true;
             else if (argument == "--fullscreen") fullscreen=true;
             else if (argument == "--level" && i + 1 < argc) { level = std::stoi(argv[++i]); direct=true; }
-            else if (argument == "--frames" && i + 1 < argc) frames = std::stoi(argv[++i]);
+            else if (argument == "--frames" && i + 1 < argc) { frames = std::stoi(argv[++i]); framesSpecified=true; }
+            else if (argument == "--replay" && i + 1 < argc) replayPath=argv[++i];
             else if (argument == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
             else if (argument == "--help") {
                 std::cout << "Por2D.exe [--fullscreen] [--level ID] [--headless --frames N --screenshot path.bmp]\n"
-                             "Por2D.exe --window-smoke-test [--screenshot path.bmp]\n";
+                             "Por2D.exe --window-smoke-test [--screenshot path.bmp]\n"
+                             "Por2D.exe --level ID --replay script.txt [--headless]\n";
                 return 0;
             } else throw std::invalid_argument("unknown or incomplete argument: " + argument);
         }
         if (frames < 0 || frames > 1000000) throw std::invalid_argument("frames must be 0..1000000");
         if (headless && windowSmoke) throw std::invalid_argument("choose headless or window smoke, not both");
         if (windowSmoke && level != 0) throw std::invalid_argument("window smoke requires level 0");
-        if (!headless) return runWindow(level, windowSmoke, screenshot,direct,fullscreen);
+        std::optional<por2::ReplayScript> script;
+        if (!replayPath.empty()) {
+            if (windowSmoke) throw std::invalid_argument("replay cannot be combined with window smoke");
+            script=por2::ReplayScript::load(std::filesystem::path(replayPath));
+            if (script->level<0 && !direct) throw std::invalid_argument("replay needs --level ID or a level directive");
+            if (script->level>=0) level=script->level;
+        }
+        if (!headless) return runWindow(level, windowSmoke, screenshot,direct,fullscreen,script);
         por2::Game game(level);
-        for (int i = 0; i < frames; ++i) game.tick({});
+        por2::Replay replay;
+        if (script) {
+            replay.start(*script,level,game);
+            if (!framesSpecified) frames=script->totalFrames;
+        }
+        int executed=0;
+        for (; executed<frames; ++executed) {
+            if (script) { if(replay.completed) break; replay.step(game); }
+            else game.tick({});
+        }
+        if (script) std::cout<<"replay="<<(replay.cleared?"cleared":replay.completed?"ended":"partial")<<" ";
+
         por2::Renderer renderer;
         renderer.draw(game);
         if (!screenshot.empty()) renderer.saveBitmap(screenshot);
         const auto& player = game.player();
-        std::cout << "level=" << level << " frames=" << frames << " position="
+        std::cout << "level=" << game.level().id << " frames=" << executed << " position="
                   << player.body.position.x << ',' << player.body.position.y
                   << " velocity=" << player.velocity.x << ',' << player.velocity.y << '\n';
         return 0;
