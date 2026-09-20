@@ -66,7 +66,13 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
         for (int x = 0; x < WindowWidth; x += TileSize) line({x, 0}, {x, WindowHeight - 1}, 0x505050);
         for (int y = 0; y < WindowHeight; y += TileSize) line({0, y}, {WindowWidth - 1, y}, 0x505050);
     }
-    if (game.level().exit) body(*game.level().exit, 0xC8C8C8);
+    if (game.level().exit) {
+        const auto& exit=*game.level().exit;
+        body(exit, 0xC8C8C8);
+        const auto head=exit.head();
+        const int x=static_cast<int>(std::lround(head.x)),y=static_cast<int>(std::lround(head.y));
+        rectangle(x-1,y-1,x+1,y+1,0x969696);
+    }
     const int entry = game.traversal().portalIndex;
     if (game.traversal().projection && entry >= 0)
         body(*game.traversal().projection, PlayerColor, &game.portals()[1 - entry]);
@@ -146,7 +152,8 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
             // Headward direction matches the tutorial diagram (light to dark).
             const Vec2 forward = decode(portal).tangent * -1;
             const Vec2 side{-forward.y,forward.x};
-            const Vec2 center = middle + side * (available[0] && available[1] ? (id == 0 ? -5.0 : 5.0) : 0.0);
+            const Vec2 separation=std::abs(side.x)>0.5?Vec2{1,0}:Vec2{0,1};
+            const Vec2 center = middle + separation * (available[0] && available[1] ? (id == 0 ? -5.0 : 5.0) : 0.0);
             const Vec2 tip = center + forward * 8;
             // Separate the arrow from an existing same-color portal only where they overlap.
             const auto& existing = game.portals()[id];

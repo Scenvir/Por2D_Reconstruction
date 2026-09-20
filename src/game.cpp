@@ -69,8 +69,9 @@ Game::Game(int initialLevel) {
     campaignIndex_ = it == Campaign.end() ? -1 : static_cast<int>(it - Campaign.begin());
     load(initialLevel);
 }
+Game::Game(const Level& customLevel):customLevel_(customLevel),campaignIndex_(-1){load(customLevel.id);}
 void Game::load(int id) {
-    level_ = makeLevel(id);
+    level_ = customLevel_?*customLevel_:makeLevel(id);
     player_ = {};
     player_.body = level_.spawn;
     portals_ = {};
@@ -80,7 +81,7 @@ void Game::load(int id) {
     finished_ = false;
 }
 void Game::restart() { load(level_.id); }
-void Game::startCampaign() { campaignIndex_ = 0; load(Campaign[0]); }
+void Game::startCampaign() { if(customLevel_){restart();return;}campaignIndex_ = 0; load(Campaign[0]); }
 void Game::advance() {
     if (campaignIndex_ < 0 || campaignIndex_ + 1 >= static_cast<int>(Campaign.size())) {
         finished_ = true;

@@ -21,6 +21,78 @@ std::string pose(const Player& p) {
     return s.str();
 }
 
+void exitOrientation() {
+    Game game(0);
+    auto& level=const_cast<Level&>(game.level());
+    level.map=TileMap{};
+    Renderer renderer;
+    for(int i=0;i<4;++i){
+        level.exit=Body{{400,200},static_cast<Direction>(i)};
+        const auto exit=*level.exit;
+        renderer.draw(game,false,false);
+        const Vec2 forward=directionVector(exit.direction);
+        const auto sample=[&](Vec2 p){return renderer.pixels()[static_cast<int>(p.y)*WindowWidth+static_cast<int>(p.x)];};
+        expect(sample(exit.head())==0x969696,"exit gray dot marks required head direction");
+        expect(sample(exit.head()+Vec2{1,1})==0x969696,"exit head dot matches player marker size");
+        expect(sample(exit.center()-forward*23)==0xC8C8C8,"exit tail has no head marker");
+        expect(game.level().exit->direction==exit.direction,"render does not change exit orientation");
+    }
+}
+
+void editorMaps(){
+    const auto path=std::filesystem::path(__FILE__).parent_path().parent_path()/"levels"/"example.json";
+    const auto level=loadEditorLevel(path,1001);
+    expect(level.name=="JSON 示例关卡"&&level.spawn.position==Vec2{61,521},"editor metadata and grid-to-pixel coordinates");
+    expect(level.map.at(3,29)==Tile::PortalSurface&&level.map.at(3,26)==Tile::Empty,"row-major editor tiles");
+    Game game(level);game.tick({});game.restart();
+    expect(game.level().id==1001&&game.player().body.position==level.spawn.position,"custom restart preserves map");
+    const_cast<Player&>(game.player()).body=*level.exit;InputFrame enter;enter.useExit=true;game.tick(enter);
+    expect(game.finished()&&game.level().id==1001,"custom exit finishes standalone map");
+    InputFrame restart;restart.restart=true;game.tick(restart);
+    expect(!game.finished()&&game.level().editorJson==level.editorJson,"custom completion restarts same map");
+    Recorder recorder;recorder.start(level);InputFrame input;input.movement.right=true;
+    for(int i=0;i<10;++i){recorder.capture(input);game.tick(input);}
+    std::istringstream source(recorder.text());auto script=ReplayScript::parse(source);
+    expect(script.customLevel.has_value(),"custom recording embeds map");
+    Replay replay;Game restored;replay.start(script,0,restored);while(!replay.completed)replay.step(restored);
+    expect(restored.player().body.position==game.player().body.position&&restored.level().name==level.name,"embedded map recording replays without source file");
+    auto change=[&](std::string from,std::string to){auto json=level.editorJson;const auto at=json.find(from);expect(at!=std::string::npos,"JSON test mutation exists");json.replace(at,from.size(),to);return json;};
+    for(const auto& bad:{change("\"width\":50","\"width\":49"),change("\"direction\":0","\"direction\":4"),change("\"x\":3","\"x\":3.5"),change("\"y\":26","\"y\":29"),change("\"spawn\":{\"x\":3,\"y\":26,\"direction\":0}","\"spawn\":null"),level.editorJson+"garbage",std::string(1024*1024+1,' ')}){
+        bool rejected=false;try{parseEditorLevel(bad);}catch(const std::exception&){rejected=true;}expect(rejected,"invalid editor map rejected");
+    }
+    const auto unicode=parseEditorLevel(change("JSON 示例关卡","\\u6d4b\\u8bd5 # \\ud83d\\ude00"));
+    expect(unicode.name=="测试 # 😀","escaped Unicode and surrogate pair decoded");
+    Recorder unicodeRecorder;unicodeRecorder.start(unicode);unicodeRecorder.capture({});
+    std::istringstream unicodeText(unicodeRecorder.text());expect(ReplayScript::parse(unicodeText).customLevel->name==unicode.name,"map hash character is not treated as a replay comment");
+}
+
+void recordingRoundTrip() {
+    Recorder recorder;recorder.start(0);
+    Game actual(0);
+    std::vector<Player> states;
+    for(int frame=0;frame<50;++frame){
+        InputFrame input;input.movement={frame%3==0,frame%3!=0,frame%7==0};
+        if(frame==8){input.shots={{0,{260.12345678901234,389}},{1,{730,389.9876543210987}}};}
+        input.restart=frame==25;input.useExit=frame==40;
+        recorder.capture(input);actual.tick(input);states.push_back(actual.player());
+    }
+    std::istringstream stream(recorder.text());const auto script=ReplayScript::parse(stream);
+    expect(script.totalFrames==50&&script.level==0,"recorded script preserves level and logical frame count");
+    Replay replay;Game playback(0);replay.start(script,0,playback);
+    for(const auto& state:states){replay.step(playback);expect(playback.player().body.position==state.body.position&&playback.player().velocity==state.velocity,"recorded combined inputs reproduce every frame");}
+    const auto shotAction=std::find_if(script.actions.begin(),script.actions.end(),[](const ScriptAction& action){return !action.input.shots.empty();});
+    expect(shotAction!=script.actions.end(),"recording retains shots");
+    expect(shotAction->input.shots[0].target.x==260.12345678901234,"recording preserves exact aiming precision");
+    expect(shotAction->input.shots.size()==2&&shotAction->input.movement.right,"recording preserves simultaneous movement and both shots");
+    recorder.start(0);for(int i=0;i<10;++i)recorder.capture({});
+    expect(recorder.script.actions.size()==1&&recorder.script.actions[0].frames==10,"idle frames are losslessly compressed");
+    recorder.active=false;recorder.capture({});expect(recorder.script.totalFrames==10,"stopped recorder ignores inputs");
+    for(const auto* bad:{"f 0 0 0","f 1 64 0","f 1 0 -1","f 1 0 1 2 1 1","f 1 0 1 0 nan 1"}){
+        bool rejected=false;try{std::istringstream input(bad);ReplayScript::parse(input);}catch(const std::exception&){rejected=true;}
+        expect(rejected,"malformed recorded frame rejected");
+    }
+}
+
 void scriptReplay() {
     std::istringstream text("\xEF\xBB\xBF# comment\nlevel 0\nd 2\nz 1\ns 0 260 389\ne 1\n");
     const auto script=ReplayScript::parse(text);
@@ -138,6 +210,17 @@ void mapsAndTransforms() {
 }
 
 void placementPreview() {
+    for(int direction=0;direction<4;++direction){
+        auto level=makeLevel(0);level.spawn={{350,300},static_cast<Direction>(direction)};
+        Game oriented(level);Renderer rendered;
+        auto portals=oriented.portals();std::vector<ShotTrace> traces;
+        const Shot aim{0,{260,389}};
+        expect(firePortal(level.map,oriented.player(),oriented.motion(),portals,aim,traces),"oriented preview fixture places portal");
+        const auto portal=portals[0];const Vec2 center=pixels(portal.tile)+Vec2{10,30};
+        rendered.draw(oriented,false,false,aim);
+        expect(rendered.pixels()[static_cast<int>(center.y)*WindowWidth+static_cast<int>(center.x)-5]==0x3296FF,"blue arrow stays on screen left for every head orientation");
+        expect(rendered.pixels()[static_cast<int>(center.y)*WindowWidth+static_cast<int>(center.x)+5]==0xFF9632,"orange arrow stays on screen right for every head orientation");
+    }
     Game game;
     Renderer baseline, preview;
     baseline.draw(game);
@@ -155,7 +238,8 @@ void placementPreview() {
         const Vec2 forward=decode(portals[id]).tangent*-1;
         const Vec2 side{-forward.y,forward.x};
         for (int candidate=0;candidate<2;++candidate) {
-            const Vec2 arrow=center+side*(candidate==0?-5.0:5.0);
+            const Vec2 separation=std::abs(side.x)>0.5?Vec2{1,0}:Vec2{0,1};
+            const Vec2 arrow=center+separation*(candidate==0?-5.0:5.0);
             const auto color=candidate==0?0x3296FFu:0xFF9632u;
             expect(preview.pixels()[static_cast<int>(arrow.y)*WindowWidth+static_cast<int>(arrow.x)]==color,
                    "both available portal colors appear side by side regardless of selected portal");
@@ -532,6 +616,9 @@ void stress() {
 
 int main() {
     const std::pair<const char*, std::function<void()>> suites[]{
+        {"editor JSON validation, custom gameplay and self-contained recordings", editorMaps},
+        {"recording combined inputs, exact replay and compression", recordingRoundTrip},
+        {"exit head direction markers in all four orientations", exitOrientation},
         {"script parsing, exact frame playback, restart and completion", scriptReplay},
         {"boundary contact restarts current level", boundaryRestart},
         {"non-mutating placement preview and actual portal position", placementPreview},

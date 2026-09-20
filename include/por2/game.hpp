@@ -32,6 +32,7 @@ bool firePortal(const TileMap& map, const Player& player, const PortalMotion& mo
 class Game {
 public:
     explicit Game(int initialLevel = 0);
+    explicit Game(const Level& customLevel);
     void tick(const InputFrame& input);
     void restart();
     void startCampaign();
@@ -47,6 +48,7 @@ private:
     void advance();
     bool atExit() const;
     Level level_;
+    std::optional<Level> customLevel_;
     Player player_;
     std::array<Portal, 2> portals_{};
     Traversal traversal_;
