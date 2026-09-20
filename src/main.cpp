@@ -84,7 +84,6 @@ int paragraph(HDC dc,RECT area,const std::wstring& text,int size,COLORREF color,
 }
 struct Application {
     explicit Application(int level) : game(level), levels(por2::Campaign.begin(),por2::Campaign.end()) {
-        levels.push_back(1); levels.push_back(2); // Sandbox levels outside the campaign.
         auto found=std::find(levels.begin(),levels.end(),level);
         if(found!=levels.end()) selected=static_cast<int>(found-levels.begin());
     }
@@ -569,10 +568,7 @@ struct Application {
             RECT r=card(i-first); fill(dc,r,buttonColor(r,i==selected));
             const auto level=levelById(levels[i]);
             const bool campaign=i<static_cast<int>(por2::Campaign.size());
-            const bool experimental=i>=static_cast<int>(por2::Campaign.size()) &&
-                i<static_cast<int>(por2::Campaign.size())+2;
-            const std::wstring prefix=campaign?L"Level "+std::to_wstring(i)+L"  ":
-                experimental?L"实验地图 ":L"自定义  ";
+            const std::wstring prefix=campaign?L"Level "+std::to_wstring(i)+L"  ":L"自定义  ";
             const std::wstring caption=(level.editorJson.empty()?prefix:L"自定义  ")+utf8(level.name);
             label(dc,r,caption,20,levelTextColor(i));
         }
@@ -581,7 +577,7 @@ struct Application {
         label(dc,{60,480,240,526},L"上一页",20,RGB(130,194,255));
         label(dc,{260,480,440,526},L"下一页",20,RGB(130,194,255));
         label(dc,{460,480,640,526},L"返回菜单 (Esc)",20,RGB(210,221,238));
-        label(dc,{60,540,940,580},L"第 "+std::to_wstring(selected/15+1)+L" / "+std::to_wstring((levels.size()+14)/15)+L" 页  ·  战役 / 实验地图 / levels 自定义地图",17,RGB(139,157,183));
+        label(dc,{60,540,940,580},L"第 "+std::to_wstring(selected/15+1)+L" / "+std::to_wstring((levels.size()+14)/15)+L" 页  ·  战役 / levels 自定义地图",17,RGB(139,157,183));
     }
 
     void update(HWND window) {
