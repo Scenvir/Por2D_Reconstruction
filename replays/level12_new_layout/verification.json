@@ -1,0 +1,98 @@
+{
+  "date": "2026-09-20",
+  "spawn": [
+    261,
+    201,
+    "Up"
+  ],
+  "exit": [
+    701,
+    101,
+    "Up"
+  ],
+  "source_sha256": {
+    "src/levels.cpp": "c0b0b28765da2a6f5781abe1970bc908089d358dc2f0b5c39a0165eb85694c54",
+    "src/physics.cpp": "a73718d4a03cb84d7fc69b9b47981eb0f84d9af6ba41a94f0a5ca51240e328ec",
+    "src/portal.cpp": "1193bc39122ed5d74b75f38ade3ac665e8d3fe706fddfa861dd21bd2e19ed1bc",
+    "src/game.cpp": "8961bfd580c0c1924266866665b425d753320513d7ea9575f0079eec7667ac4b"
+  },
+  "count_semantics": "Verified route variants distinguished by portal-crossing location and body orientation sequence; not an exhaustive solution count.",
+  "routes": [
+    {
+      "file": "route1.txt",
+      "origin": "level12_review_new_a_solution1.txt",
+      "stats": {
+        "id": 16,
+        "frames": 585,
+        "actions": 102,
+        "shots": 22,
+        "changes": 20,
+        "sites": 9,
+        "crossShots": 7,
+        "headShots": 7,
+        "turns": 8,
+        "perturbPassed": 89,
+        "perturbTotal": 158
+      },
+      "signature": "15,6,1;15,6,0;26,12,2;18,14,1;18,14,2;15,6,2;14,23,3;11,12,3;36,9,3;15,6,2;28,12,0;36,9,0;29,6,0;",
+      "result": "replay=cleared level=13 frames=585 position=260,380 velocity=0,0"
+    },
+    {
+      "file": "route2.txt",
+      "origin": "level12_review_new_a_solution2.txt",
+      "stats": {
+        "id": 16,
+        "frames": 612,
+        "actions": 108,
+        "shots": 25,
+        "changes": 23,
+        "sites": 9,
+        "crossShots": 10,
+        "headShots": 10,
+        "turns": 9,
+        "perturbPassed": 101,
+        "perturbTotal": 164
+      },
+      "signature": "15,6,1;15,6,0;26,12,2;18,14,1;18,14,2;15,6,2;14,23,3;11,12,3;36,9,3;15,6,0;36,9,3;15,6,0;29,6,0;",
+      "result": "replay=cleared level=13 frames=612 position=260,380 velocity=0,0"
+    },
+    {
+      "file": "route3.txt",
+      "origin": "level12_review_new_b_solution1.txt",
+      "stats": {
+        "id": 16,
+        "frames": 908,
+        "actions": 125,
+        "shots": 34,
+        "changes": 33,
+        "sites": 9,
+        "crossShots": 12,
+        "headShots": 12,
+        "turns": 12,
+        "perturbPassed": 101,
+        "perturbTotal": 180
+      },
+      "signature": "15,6,1;15,6,0;26,12,2;18,14,1;11,12,1;26,12,1;15,6,2;26,12,1;15,6,3;18,14,2;15,6,2;14,23,3;11,12,3;36,9,3;15,6,0;29,6,1;15,6,0;29,6,0;",
+      "result": "replay=cleared level=13 frames=908 position=260,380 velocity=0,0"
+    },
+    {
+      "file": "route4.txt",
+      "origin": "level12_review_new_b_solution2.txt",
+      "stats": {
+        "id": 16,
+        "frames": 851,
+        "actions": 113,
+        "shots": 25,
+        "changes": 25,
+        "sites": 9,
+        "crossShots": 11,
+        "headShots": 8,
+        "turns": 12,
+        "perturbPassed": 99,
+        "perturbTotal": 174
+      },
+      "signature": "15,6,1;15,6,0;26,12,2;18,14,1;11,12,1;26,12,1;15,6,2;26,12,1;15,6,3;18,14,2;15,6,2;14,23,3;11,12,3;28,12,1;15,6,2;37,18,0;28,12,0;36,9,0;29,6,0;",
+      "result": "replay=cleared level=13 frames=851 position=260,380 velocity=0,0"
+    }
+  ]
+}

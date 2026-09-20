@@ -97,7 +97,7 @@ void boundaryRestart() {
 
 void mapsAndTransforms() {
     const std::array<const char*,15> names{{u8"概念",u8"高山",u8"旋转",u8"远跳",u8"大脑",
-        u8"穿梭",u8"支点",u8"裂缝",u8"铁砧",u8"倒立",u8"远见",u8"生死逆转",u8"生死逆转",u8"阀门",u8"深渊"}};
+        u8"穿梭",u8"支点",u8"裂缝",u8"铁砧",u8"倒立",u8"远见",u8"愚者",u8"阀门",u8"深渊",u8"天梯"}};
     for (std::size_t i=0;i<Campaign.size();++i) {
         const auto level=makeLevel(Campaign[i]);
         expect(level.name==names[i], "Chinese names follow displayed campaign order");
@@ -505,7 +505,7 @@ void stress() {
     expect(game.level().id == 5, "first exit remains reachable");
     Game campaign;
     for (int id : Campaign) {
-        expect(campaign.level().id == id, "campaign order unchanged");
+        expect(campaign.level().id == id, "campaign follows configured order");
         InputFrame skip;
         skip.skip = true;
         campaign.tick(skip);
