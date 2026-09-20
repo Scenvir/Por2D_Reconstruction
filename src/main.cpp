@@ -33,6 +33,25 @@ std::optional<por2::Vec2> logicalPoint(HWND window, int x, int y) {
 }
 RECT card(int slot) { return {60+(slot%3)*300, 140+(slot/3)*64, 340+(slot%3)*300, 192+(slot/3)*64}; }
 bool contains(RECT r, por2::Vec2 p) { return p.x>=r.left && p.x<r.right && p.y>=r.top && p.y<r.bottom; }
+RECT menuRow(int row) { return {310,170+row*72,690,228+row*72}; }
+RECT bindingRow(int row) { return {190,108+row*46,810,148+row*46}; }
+const std::array<unsigned,8> DefaultBindings{'A','D','W','E','R','Q',VK_LBUTTON,VK_RBUTTON};
+const std::array<std::wstring,8> ActionNames{L"向左移动",L"向右移动",L"跳跃",L"进入出口",L"重新开始",L"切换落点预览",L"蓝色传送门",L"橙色传送门"};
+bool bindable(unsigned key, int action) {
+    if(key==VK_LBUTTON || key==VK_RBUTTON) return action>=6;
+    return (key>='A'&&key<='Z') || (key>='0'&&key<='9') || key==VK_SPACE ||
+        (key>=VK_LEFT&&key<=VK_DOWN) || (key>=VK_NUMPAD0&&key<=VK_DIVIDE) ||
+        (key>=VK_OEM_1&&key<=VK_OEM_3) || (key>=VK_OEM_4&&key<=VK_OEM_8);
+}
+std::wstring keyName(unsigned key) {
+    if(key==VK_LBUTTON)return L"鼠标左键";
+    if(key==VK_RBUTTON)return L"鼠标右键";
+    wchar_t text[64]{};
+    LONG scan=static_cast<LONG>(MapVirtualKeyW(key,MAPVK_VK_TO_VSC)<<16);
+    if(key>=VK_LEFT&&key<=VK_DOWN)scan|=1<<24;
+    if(GetKeyNameTextW(scan,text,64))return text;
+    return L"Key "+std::to_wstring(key);
+}
 void label(HDC dc, RECT r, const std::wstring& text, int size, COLORREF color) {
     HFONT font = CreateFontW(-size,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
         OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei");
@@ -116,6 +135,71 @@ struct Application {
     std::vector<int> levels;
     int selected=0;
     bool menu=true, started=false, fullscreen=false;
+    enum class Page { Main, Levels, Settings };
+    Page page=Page::Main;
+    int menuItem=0, settingItem=0, rebinding=-1;
+    std::optional<por2::Vec2> menuPointer;
+    bool mouseNavigation=false;
+    COLORREF buttonColor(RECT rect, bool keyboardSelected=false) const {
+        const bool active=mouseNavigation?(menuPointer&&contains(rect,*menuPointer)):keyboardSelected;
+        return active?RGB(35,110,174):RGB(31,43,61);
+    }
+    COLORREF levelTextColor(int index) const {
+        return started&&levels[index]==game.level().id?RGB(139,157,183):RGB(240,245,255);
+    }
+    std::array<unsigned,8> bindings=DefaultBindings;
+    std::wstring settingsMessage=L"选择操作后按新键；Esc 取消改键。重复键位会提示冲突。";
+    std::filesystem::path bindingsPath;
+    void loadBindings(const std::filesystem::path& path={}) {
+        wchar_t executable[32768]{};
+        GetModuleFileNameW(nullptr,executable,32768);
+        bindingsPath=path.empty()?std::filesystem::path(executable).parent_path()/L"keybindings.ini":path;
+        std::ifstream file(bindingsPath);
+        auto candidate=DefaultBindings;
+        for(int i=0;i<8;++i) {
+            if(!(file>>candidate[i]) || !bindable(candidate[i],i))return;
+            for(int j=0;j<i;++j)if(candidate[i]==candidate[j])return;
+        }
+        bindings=candidate;
+    }
+    void saveBindings() {
+        if(smoke)return;
+        std::ofstream file(bindingsPath);
+        for(auto key:bindings)file<<key<<'\n';
+        file.close();
+        if(!file)settingsMessage=L"键位已生效，但无法写入 keybindings.ini；请检查游戏目录写入权限。";
+    }
+    void assignBinding(unsigned key) {
+        if(rebinding<0)return;
+        if(!bindable(key,rebinding)){settingsMessage=L"该按键保留给菜单或系统，请选择字母、数字、方向键或空格等按键。";return;}
+        for(int i=0;i<8;++i)if(i!=rebinding&&bindings[i]==key){settingsMessage=L"该按键已用于「"+ActionNames[i]+L"」，请先更改该操作。";return;}
+        bindings[rebinding]=key;rebinding=-1;clearInput();
+        settingsMessage=L"键位已保存。";saveBindings();
+    }
+    void openMenu(Page next=Page::Main) {
+        menu=true;page=next;rebinding=-1;clearInput();
+        if(next==Page::Levels && started){
+            const auto current=std::find(levels.begin(),levels.end(),game.level().id);
+            if(current!=levels.end())selected=static_cast<int>(current-levels.begin());
+        }
+    }
+    void resume() { if(started){menu=false;clearInput();} }
+    void back() {
+        if(rebinding>=0){rebinding=-1;settingsMessage=L"已取消改键。";}
+        else if(page!=Page::Main)openMenu();
+        else resume();
+    }
+    void activateMenu(HWND window) {
+        if(menuItem==0){if(started)resume();else openMenu(Page::Levels);}
+        if(menuItem==1)openMenu(Page::Settings);
+        if(menuItem==2)openMenu(Page::Levels);
+        if(menuItem==3)DestroyWindow(window);
+    }
+    void activateSetting() {
+        if(settingItem<8){rebinding=settingItem;settingsMessage=L"请按新键（传送门也可使用鼠标左右键）；Esc 取消。";}
+        else if(settingItem==8){bindings=DefaultBindings;settingsMessage=L"已恢复默认键位。";saveBindings();clearInput();}
+        else back();
+    }
     bool intro=true;
     static constexpr int LevelIntroDuration=150;
     int levelIntroTicks=-1;
@@ -145,7 +229,7 @@ struct Application {
     por2::Game demo{0};
     std::mt19937 random{std::random_device{}()};
     int demoTicks=0, demoMove=0;
-    void leaveIntro() { intro=false; menu=true; clearInput(); }
+    void leaveIntro() { intro=false; openMenu(); }
     void updateDemo() {
         por2::InputFrame input;
         if (demoTicks % 30 == 0) demoMove=static_cast<int>(random()%3)-1;
@@ -167,6 +251,13 @@ struct Application {
     WINDOWPLACEMENT placement{};
     LONG_PTR savedStyle=0;
     void clearInput() { keys={}; mousePressed={}; shots.clear(); exitPressed=false; ReleaseCapture(); }
+    void keyboardShot(HWND window, int portal) {
+        POINT cursor{};
+        if(GetCursorPos(&cursor)&&ScreenToClient(window,&cursor)){
+            const auto point=logicalPoint(window,cursor.x,cursor.y);
+            if(point){previewPortal=portal;shots.push_back({portal,*point});}
+        }
+    }
     void toggleFullscreen(HWND window) {
         clearInput();
         if (!fullscreen) {
@@ -193,31 +284,53 @@ struct Application {
         renderer.draw(game,debug,grid);
     }
     void menuClick(HWND window, por2::Vec2 point) {
+        if(page==Page::Main){for(int i=0;i<4;++i)if(contains(menuRow(i),point)){menuItem=i;activateMenu(window);return;}return;}
+        if(page==Page::Settings){
+            for(int i=0;i<8;++i)if(contains(bindingRow(i),point)){settingItem=i;activateSetting();return;}
+            if(contains({190,492,490,532},point)){settingItem=8;activateSetting();}
+            if(contains({510,492,810,532},point))back();
+            return;
+        }
         const int first=(selected/15)*15;
         for(int i=first;i<std::min(first+15,static_cast<int>(levels.size()));++i)
             if(contains(card(i-first),point)) { selected=i; startSelected(); return; }
         if(contains({60,480,240,526},point)) selected=selected>=15?selected-15:static_cast<int>(levels.size())-1;
         else if(contains({260,480,440,526},point)) selected=(first+15)%levels.size();
-        else if(contains({460,480,640,526},point) && started) { menu=false; clearInput(); }
+        else if(contains({460,480,640,526},point)) openMenu();
         else if(contains({660,480,840,526},point)) toggleFullscreen(window);
-        else if(contains({850,480,950,526},point)) DestroyWindow(window);
     }
     void drawMenu(HDC dc) const {
         fill(dc,{0,0,1000,600},RGB(15,21,34));
+        if(page==Page::Main){
+            label(dc,{60,35,940,100},started?L"游戏已暂停":L"Por2D / 主菜单",38,RGB(235,242,255));
+            if(started)label(dc,{60,105,940,145},utf8(game.level().name),22,RGB(150,173,201));
+            const std::array<std::wstring,4> items{started?L"继续游戏":L"开始游戏",L"设置",L"关卡选择",L"退出游戏"};
+            for(int i=0;i<4;++i){fill(dc,menuRow(i),buttonColor(menuRow(i),i==menuItem));label(dc,menuRow(i),items[i],25,RGB(240,245,255));}
+            label(dc,{60,530,940,580},L"↑ / ↓ 选择 · Enter 确认 · Esc 继续游戏",18,RGB(150,173,201));return;
+        }
+        if(page==Page::Settings){
+            label(dc,{60,20,940,75},L"设置 / 键位",34,RGB(235,242,255));
+            for(int i=0;i<8;++i){fill(dc,bindingRow(i),buttonColor(bindingRow(i),i==settingItem));label(dc,bindingRow(i),ActionNames[i]+L"    "+(rebinding==i?L"[ 等待输入… ]":keyName(bindings[i])),21,RGB(240,245,255));}
+            fill(dc,{190,492,490,532},buttonColor({190,492,490,532},settingItem==8));
+            fill(dc,{510,492,810,532},buttonColor({510,492,810,532},settingItem==9));
+            label(dc,{190,492,490,532},L"恢复默认",21,RGB(240,245,255));label(dc,{510,492,810,532},L"返回菜单 (Esc)",21,RGB(240,245,255));
+            label(dc,{20,540,980,580},settingsMessage,17,RGB(255,215,100));return;
+        }
         label(dc,{60,25,940,82},L"Por2D  /  选择关卡",36,RGB(235,242,255));
         label(dc,{60,85,940,120},L"点击关卡开始  ·  方向键 / Enter 开始  ·  F6 导入脚本  ·  F11 全屏",18,RGB(150,173,201));
         const int first=(selected/15)*15;
         for(int i=first;i<std::min(first+15,static_cast<int>(levels.size()));++i) {
-            RECT r=card(i-first); fill(dc,r,i==selected?RGB(35,110,174):RGB(31,43,61));
+            RECT r=card(i-first); fill(dc,r,buttonColor(r,i==selected));
             const auto name=por2::makeLevel(levels[i]).name;
             const std::wstring caption=L"Level "+std::to_wstring(i)+L"  "+utf8(name);
-            label(dc,r,caption,20,RGB(240,245,255));
+            label(dc,r,caption,20,levelTextColor(i));
         }
+        for(const RECT r : {RECT{60,480,240,526},RECT{260,480,440,526},RECT{460,480,640,526},RECT{660,480,840,526}})
+            fill(dc,r,buttonColor(r));
         label(dc,{60,480,240,526},L"上一页",20,RGB(130,194,255));
         label(dc,{260,480,440,526},L"下一页",20,RGB(130,194,255));
-        label(dc,{460,480,640,526},started?L"继续游戏 (Esc)":L"请选择关卡",20,RGB(210,221,238));
+        label(dc,{460,480,640,526},L"返回菜单 (Esc)",20,RGB(210,221,238));
         label(dc,{660,480,840,526},fullscreen?L"切换窗口":L"切换全屏",20,RGB(255,183,100));
-        label(dc,{850,480,950,526},L"退出",20,RGB(210,221,238));
         label(dc,{60,540,940,580},L"第 "+std::to_wstring(selected/15+1)+L" / "+std::to_wstring((levels.size()+14)/15)+L" 页  ·  按战役顺序排列，末尾为实验地图",17,RGB(139,157,183));
     }
 
@@ -230,16 +343,23 @@ struct Application {
         }
         if (smoke) {
             ++smokeTicks;
+            const auto hover=[&](int x,int y){
+                const RECT view=viewport(window);
+                SendMessageW(window,WM_MOUSEMOVE,0,MAKELPARAM(view.left+x*(view.right-view.left)/1000,view.top+y*(view.bottom-view.top)/600));
+            };
             if (smokeTicks == 1) {
                 updateDemo();
                 if (!intro || demoTicks!=1 || demo.level().id!=0)
                     throw std::runtime_error("intro demo failed");
                 SendMessageW(window,WM_PAINT,0,0);
                 SendMessageW(window,WM_KEYDOWN,VK_RETURN,0);
-                if(intro || !menu || started) throw std::runtime_error("intro did not open level selection");
+                if(intro || !menu || started || page!=Page::Main) throw std::runtime_error("intro did not open main menu");
                 SendMessageW(window,WM_KEYDOWN,VK_RETURN,static_cast<LPARAM>(1LL<<30));
                 if(started) throw std::runtime_error("intro key repeat started a level");
                 SendMessageW(window,WM_KEYUP,VK_RETURN,0);
+                SendMessageW(window, WM_KEYDOWN, VK_RETURN, 0);
+                if(page!=Page::Levels || started)throw std::runtime_error("main menu did not open level selection");
+                SendMessageW(window, WM_KEYUP, VK_RETURN, 0);
                 SendMessageW(window, WM_KEYDOWN, VK_RETURN, 0);
                 if(exitPressed) throw std::runtime_error("menu E leaked into exit action");
                 SendMessageW(window, WM_KEYUP, VK_RETURN, 0);
@@ -296,7 +416,47 @@ struct Application {
             }
             if (smokeTicks == 13) {
                 SendMessageW(window,WM_KEYDOWN,VK_ESCAPE,0);
-                if(!menu) throw std::runtime_error("menu did not pause");
+                SendMessageW(window,WM_KEYUP,VK_ESCAPE,0);
+                if(!menu || page!=Page::Main) throw std::runtime_error("menu did not pause");
+                const auto frozen=game.player().body.position;
+                const auto portals=game.portals();
+                menuClick(window,{500,260});
+                if(page!=Page::Settings)throw std::runtime_error("settings navigation failed");
+                hover(500,170);
+                if(buttonColor(bindingRow(1))!=RGB(35,110,174)||buttonColor(bindingRow(0),true)==RGB(35,110,174))
+                    throw std::runtime_error("settings hover did not replace keyboard highlight");
+                hover(300,510);
+                if(buttonColor({190,492,490,532})!=RGB(35,110,174))throw std::runtime_error("reset button hover failed");
+                SendMessageW(window,WM_MOUSELEAVE,0,0);
+                if(buttonColor({190,492,490,532})==RGB(35,110,174))throw std::runtime_error("mouse leave retained hover");
+                hover(500,170);
+                smoke=false;update(window);smoke=true;
+                if(game.player().body.position!=frozen || game.portals()[0].active()!=portals[0].active())throw std::runtime_error("settings did not pause game");
+                SendMessageW(window,WM_PAINT,0,0);
+                settingItem=0;activateSetting();
+                SendMessageW(window,WM_KEYDOWN,'D',0);SendMessageW(window,WM_KEYUP,'D',0);
+                if(rebinding!=0 || bindings[0]!='A')throw std::runtime_error("duplicate binding accepted");
+                SendMessageW(window,WM_KEYDOWN,'J',0);SendMessageW(window,WM_KEYUP,'J',0);
+                if(rebinding!=-1 || bindings[0]!='J' || keys['J'])throw std::runtime_error("rebind failed or leaked input");
+                bindingsPath=std::filesystem::temp_directory_path()/("por2-bindings-test-"+std::to_string(GetCurrentProcessId())+".ini");
+                smoke=false;saveBindings();smoke=true;
+                bindings=DefaultBindings;loadBindings(bindingsPath);
+                std::filesystem::remove(bindingsPath);
+                if(bindings[0]!='J')throw std::runtime_error("bindings did not persist");
+                settingItem=2;activateSetting();
+                SendMessageW(window,WM_KEYDOWN,VK_ESCAPE,0);SendMessageW(window,WM_KEYUP,VK_ESCAPE,0);
+                if(rebinding!=-1 || bindings[2]!='W' || page!=Page::Settings)throw std::runtime_error("cancel binding failed");
+                SendMessageW(window,WM_KEYDOWN,VK_ESCAPE,0);SendMessageW(window,WM_KEYUP,VK_ESCAPE,0);
+                if(page!=Page::Main || !menu)throw std::runtime_error("settings back resumed game");
+                SendMessageW(window,WM_KEYDOWN,VK_ESCAPE,0);SendMessageW(window,WM_KEYUP,VK_ESCAPE,0);
+                if(menu || game.player().body.position!=frozen)throw std::runtime_error("resume changed game");
+                SendMessageW(window,WM_KEYDOWN,'J',0);
+                smoke=false;update(window);smoke=true;
+                SendMessageW(window,WM_KEYUP,'J',0);
+                if(game.player().body.position.x>=frozen.x)throw std::runtime_error("new movement binding not applied");
+                openMenu(Page::Settings);settingItem=8;activateSetting();
+                if(bindings!=DefaultBindings)throw std::runtime_error("restore bindings failed");
+                openMenu();
                 RECT before{}; GetWindowRect(window,&before);
                 toggleFullscreen(window);
                 const RECT r=viewport(window);
@@ -308,6 +468,17 @@ struct Application {
                 if(!EqualRect(&before,&after)) throw std::runtime_error("window bounds not restored");
             }
             if(smokeTicks==14) {
+                menuClick(window,{500,340});
+                if(page!=Page::Levels)throw std::runtime_error("pause menu did not open level selection");
+                if(levels[selected]!=game.level().id || levelTextColor(selected)!=RGB(139,157,183))
+                    throw std::runtime_error("current level text is not gray");
+                const int currentSelection=selected;
+                hover(400,160);
+                if(buttonColor(card(1))!=RGB(35,110,174)||selected!=currentSelection)
+                    throw std::runtime_error("level hover changed selection or failed to highlight");
+                SendMessageW(window,WM_PAINT,0,0);
+                hover(500,570);
+                if(buttonColor(card(1))==RGB(35,110,174))throw std::runtime_error("empty area retained hover");
                 auto found=std::find(levels.begin(),levels.end(),16);
                 if(found==levels.end()) throw std::runtime_error("map16 missing from menu");
                 selected=static_cast<int>(found-levels.begin());
@@ -361,13 +532,13 @@ struct Application {
             }
         }
         por2::InputFrame input;
-        input.movement = {keys['A'], keys['D'], keys['W']};
+        input.movement = {keys[bindings[0]], keys[bindings[1]], keys[bindings[2]]};
         if (!menu && levelIntroActive()) {
             stepLevelIntro();
             InvalidateRect(window,nullptr,FALSE);
             return;
         }
-        input.restart = keys['R'];
+        input.restart = keys[bindings[4]];
         input.useExit = exitPressed;
         exitPressed = false;
         //input.skip = keys[VK_LCONTROL];
@@ -402,8 +573,8 @@ struct Application {
         if(previewEnabled && smoke && smokeTicks==10) preview=por2::Shot{0,{260,389}};
         renderer.draw(game, debug, grid, preview);
         const std::string nextTitle = game.finished()
-            ? "Por2D - Completed! R: play again | Esc: menu | F11: fullscreen"
-            : "Por2D - " + game.level().name + " | Esc: levels  F11: fullscreen | A/D: move  W: jump  E: exit  R: restart";
+            ? "Por2D - Completed! | Esc: menu | F11: fullscreen"
+            : "Por2D - " + game.level().name + " | Esc: pause / menu | F11: fullscreen";
         if (nextTitle != title) { title = nextTitle; SetWindowTextW(window, utf8(title).c_str()); }
         InvalidateRect(window, nullptr, FALSE);
         if (smoke) SendMessageW(window, WM_PAINT, 0, 0);
@@ -431,6 +602,15 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     case WM_SYSKEYUP: {
         const bool pressed = message != WM_KEYUP && message != WM_SYSKEYUP;
         unsigned key = static_cast<unsigned>(wparam);
+        if(message==WM_SYSKEYDOWN && key==VK_F4)return DefWindowProcW(window,message,wparam,lparam);
+        if(app->menu && app->page==Application::Page::Settings && app->rebinding>=0){
+            if(pressed && !(lparam&(1LL<<30))){
+                if(key==VK_ESCAPE)app->back();else app->assignBinding(key);
+                app->suppressedKey=key;
+                InvalidateRect(window,nullptr,FALSE);
+            }
+            return 0;
+        }
         if (pressed && !(lparam & (1LL<<30)) && key==VK_F6) {
             app->importReplay(window); return 0;
         }
@@ -453,7 +633,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             if (!pressed) app->suppressedKey=256;
             return 0;
         }
-        if (app->levelIntroActive() && !app->menu) {
+        if (app->levelIntroActive() && !app->menu && key!=VK_ESCAPE) {
             if (pressed && !(lparam & (1LL<<30))) {
                 app->endLevelIntro();
                 app->suppressedKey=key;
@@ -467,12 +647,25 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             return 0;
         }
         if (key == VK_CONTROL) key = (lparam & (1LL << 24)) ? VK_RCONTROL : VK_LCONTROL;
-        if (key < app->keys.size()) app->keys[key] = pressed;
+        if (!app->menu && key < app->keys.size()) app->keys[key] = pressed;
         if (pressed && !(lparam & (1LL << 30))) {
             if (key == VK_F11 || (key==VK_RETURN && (lparam & (1LL<<29)))) { app->toggleFullscreen(window); return 0; }
-            if (key == VK_ESCAPE) { if(!app->menu || app->started) app->menu=!app->menu; app->clearInput(); }
-            if(key=='E' && !app->menu) app->exitPressed=true;
+            if (key == VK_ESCAPE) {
+                if(app->menu)app->back();else app->openMenu();
+                InvalidateRect(window,nullptr,FALSE);return 0;
+            }
+            if(key==app->bindings[3] && !app->menu) app->exitPressed=true;
             if(app->menu) {
+                if(key==VK_LEFT||key==VK_RIGHT||key==VK_UP||key==VK_DOWN||key==VK_PRIOR||key==VK_NEXT||key==VK_RETURN)
+                    app->mouseNavigation=false;
+                if(app->page!=Application::Page::Levels){
+                    int& item=app->page==Application::Page::Main?app->menuItem:app->settingItem;
+                    const int count=app->page==Application::Page::Main?4:10;
+                    if(key==VK_UP)item=(item+count-1)%count;
+                    if(key==VK_DOWN)item=(item+1)%count;
+                    if(key==VK_RETURN){if(app->page==Application::Page::Main)app->activateMenu(window);else app->activateSetting();}
+                    InvalidateRect(window,nullptr,FALSE);return 0;
+                }
                 int delta=0;
                 if(key==VK_LEFT) delta=-1;
                 if(key==VK_RIGHT) delta=1;
@@ -482,16 +675,36 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
                 if(key==VK_NEXT) delta=15;
                 app->selected=std::clamp(app->selected+delta,0,static_cast<int>(app->levels.size())-1);
                 if(key==VK_RETURN) app->startSelected();
+                InvalidateRect(window,nullptr,FALSE);return 0;
             }
             if (key == VK_F1) app->debug = !app->debug;
             if (key == VK_F2) app->grid = !app->grid;
-            if (key == 'Q') app->previewEnabled = !app->previewEnabled;
+            if (key == app->bindings[5]) app->previewEnabled = !app->previewEnabled;
+            for(int i=0;i<2;++i)if(key==app->bindings[6+i])app->keyboardShot(window,i);
         }
         if(message==WM_SYSKEYDOWN) return DefWindowProcW(window,message,wparam,lparam);
         return 0;
     }
+    case WM_MOUSEMOVE: {
+        app->menuPointer=logicalPoint(window,GET_X_LPARAM(lparam),GET_Y_LPARAM(lparam));
+        app->mouseNavigation=true;
+        TRACKMOUSEEVENT tracking{sizeof(TRACKMOUSEEVENT),TME_LEAVE,window,0};
+        TrackMouseEvent(&tracking);
+        if(app->menu)InvalidateRect(window,nullptr,FALSE);
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        app->menuPointer.reset();app->mouseNavigation=true;
+        if(app->menu)InvalidateRect(window,nullptr,FALSE);
+        return 0;
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
+        app->menuPointer=logicalPoint(window,GET_X_LPARAM(lparam),GET_Y_LPARAM(lparam));
+        app->mouseNavigation=true;
+        if(app->menu && app->page==Application::Page::Settings && app->rebinding>=0){
+            app->assignBinding(message==WM_LBUTTONDOWN?VK_LBUTTON:VK_RBUTTON);
+            InvalidateRect(window,nullptr,FALSE);return 0;
+        }
         if(app->replay.active && !app->menu) return 0;
         if(app->levelIntroActive() && !app->menu) {
             app->endLevelIntro();
@@ -503,7 +716,8 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             InvalidateRect(window,nullptr,FALSE);
             return 0;
         }
-        app->previewPortal = message == WM_LBUTTONDOWN ? 0 : 1;
+        if(!app->menu)for(int i=0;i<2;++i)
+            if(app->bindings[6+i]==(message==WM_LBUTTONDOWN?VK_LBUTTON:VK_RBUTTON))app->previewPortal=i;
         app->mousePressed[message == WM_LBUTTONDOWN ? 0 : 1] = true;
         SetCapture(window);
         return 0;
@@ -513,7 +727,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         const auto point=logicalPoint(window,GET_X_LPARAM(lparam),GET_Y_LPARAM(lparam));
         if(app->mousePressed[id] && point) {
             if(app->menu) { if(id==0) app->menuClick(window,*point); }
-            else app->shots.push_back({id,*point});
+            else for(int i=0;i<2;++i)if(app->bindings[6+i]==(id==0?VK_LBUTTON:VK_RBUTTON))app->shots.push_back({i,*point});
         }
         app->mousePressed[id] = false;
         if (!app->mousePressed[0] && !app->mousePressed[1]) ReleaseCapture();
@@ -551,7 +765,8 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(255, 255, 255));
             RECT area{0, 30, por2::WindowWidth, 70};
-            DrawTextW(dc, L"Completed!  R: play again    Esc: levels", -1, &area, DT_CENTER | DT_SINGLELINE);
+            const auto completed=L"已完成！  "+keyName(app->bindings[4])+L"：重新开始    Esc：菜单";
+            DrawTextW(dc, completed.c_str(), -1, &area, DT_CENTER | DT_SINGLELINE);
         }
         if(!app->menu && !app->intro && !app->levelIntroActive()) {
             const auto entry=std::find(app->levels.begin(),app->levels.end(),app->game.level().id);
@@ -578,7 +793,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             SelectObject(frame,oldFrame); DeleteObject(frameBitmap); DeleteDC(frame);
         }
         SelectObject(dc,oldBitmap);
-        if(app->smoke && (app->smokeTicks==13 || app->intro || app->levelIntroActive() || app->replay.active) && !app->screenshot.empty()) {
+        if(app->smoke && (app->menu || app->intro || app->levelIntroActive() || app->replay.active) && !app->screenshot.empty()) {
             std::vector<std::uint32_t> pixels(1000*600);
             if(!GetDIBits(dc,bitmap,0,600,pixels.data(),&info,DIB_RGB_COLORS))
                 app->failure="menu screenshot failed";
@@ -586,7 +801,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
                 BITMAPFILEHEADER header{}; header.bfType=0x4d42;
                 header.bfOffBits=sizeof(header)+sizeof(BITMAPINFOHEADER);
                 header.bfSize=header.bfOffBits+static_cast<DWORD>(pixels.size()*4);
-                std::ofstream file(app->screenshot+(app->replay.active?".replay.bmp":app->intro?".intro.bmp":app->levelIntroActive()?".level-intro.bmp":".menu.bmp"),std::ios::binary);
+                std::ofstream file(app->screenshot+(app->intro?".intro.bmp":app->menu&&app->page==Application::Page::Settings?".settings.bmp":app->menu&&app->page==Application::Page::Levels?".levels.bmp":app->replay.active?".replay.bmp":app->levelIntroActive()?".level-intro.bmp":".menu.bmp"),std::ios::binary);
                 file.write(reinterpret_cast<const char*>(&header),sizeof(header));
                 file.write(reinterpret_cast<const char*>(&info.bmiHeader),sizeof(BITMAPINFOHEADER));
                 file.write(reinterpret_cast<const char*>(pixels.data()),pixels.size()*4);
@@ -610,6 +825,7 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
     SetProcessDPIAware();
     Application app(level);
     app.smoke = smoke;
+    if(!smoke)app.loadBindings();
     app.menu=!direct || smoke; app.started=direct && !smoke;
     app.intro=!direct || smoke;
     if (direct && !smoke) app.beginLevelIntro();
@@ -643,7 +859,7 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
     }
     if (status < 0) throw std::runtime_error("window message loop failed");
     if (!app.failure.empty()) throw std::runtime_error(app.failure);
-    if (smoke) std::cout << "PASS native window: timer, keyboard, mouse, restart, focus, paint, menu, map16 and fullscreen\n";
+    if (smoke) std::cout << "PASS native window: pause/resume, separate menus, rebind/conflict/cancel/reset/persistence, keyboard, mouse, restart, focus, paint, map16 and fullscreen\n";
     return static_cast<int>(message.wParam);
 }
 } // namespace
