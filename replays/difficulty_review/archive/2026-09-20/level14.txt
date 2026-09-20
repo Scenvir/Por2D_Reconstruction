@@ -1,4 +1,4 @@
-# Difficulty review 2026-09-20: displayed Level 13, source ID 4
+# Difficulty review 2026-09-20: displayed Level 14, source ID 4
 # Origin: build/difficulty_audit/play4_block0.txt
 # Verified normal exit; representative route, not a shortest-path claim.
 level 4

@@ -1,0 +1,31 @@
+# Difficulty review 2026-09-20: displayed Level 4, source ID 8
+# Origin: build/difficulty_audit/search_8.txt
+# Verified normal exit; representative route, not a shortest-path claim.
+level 8
+a 3
+z 8
+s 0 260 299.9
+dw 8
+a 3
+s 1 399.9 420
+d 3
+dw 8
+s 1 479.9 200
+a 8
+aw 8
+d 3
+s 1 720 280.1
+aw 8
+a 8
+a 8
+s 1 559.9 420
+s 0 720 280.1
+a 3
+w 3
+a 8
+d 3
+z 8
+a 8
+a 8
+z 3
+e 1

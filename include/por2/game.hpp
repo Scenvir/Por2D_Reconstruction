@@ -34,6 +34,7 @@ public:
     explicit Game(int initialLevel = 0);
     explicit Game(const Level& customLevel);
     void tick(const InputFrame& input);
+    bool shoot(const Shot& shot); // Attempt a shot without advancing physics (also used by live teaching scenes).
     void restart();
     void startCampaign();
     const Level& level() const { return level_; }
@@ -43,6 +44,7 @@ public:
     const PortalMotion& motion() const { return motion_; }
     const std::vector<ShotTrace>& traces() const { return traces_; }
     bool finished() const { return finished_; }
+    bool crowned() const { return finished_ && !customLevel_ && level_.id == Campaign.back(); }
 private:
     void load(int id);
     void advance();

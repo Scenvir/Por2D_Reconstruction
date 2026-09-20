@@ -1,0 +1,17 @@
+# Difficulty review 2026-09-20: displayed Level 1, source ID 5
+# Origin: build/difficulty_audit/search_5.txt
+# Verified normal exit; representative route, not a shortest-path claim.
+level 5
+s 0 480 240.1
+a 3
+s 1 260 380.1
+a 8
+w 3
+a 8
+s 0 720 380.1
+z 3
+a 8
+z 8
+a 8
+a 8
+e 1

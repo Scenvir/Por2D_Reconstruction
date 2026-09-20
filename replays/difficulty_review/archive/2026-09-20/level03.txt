@@ -1,0 +1,27 @@
+# Difficulty review 2026-09-20: displayed Level 3, source ID 7
+# Origin: build/difficulty_audit/search_7.txt
+# Verified normal exit; representative route, not a shortest-path claim.
+level 7
+d 3
+s 0 339.9 420
+s 1 339.9 200
+d 3
+s 1 339.9 200
+z 8
+z 3
+s 0 339.9 420
+s 1 260 220.1
+s 1 260 220.1
+d 8
+d 8
+d 3
+d 3
+a 8
+z 3
+z 3
+s 1 679.9 420
+s 0 460 399.9
+d 8
+z 8
+d 3
+e 1

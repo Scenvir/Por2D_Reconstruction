@@ -9,8 +9,9 @@ namespace por2 {
 class Renderer {
 public:
     Renderer();
+    bool crownUnlocked = false, crownVisible = true;
     void draw(const Game& game, bool debug = true, bool grid = false,
-              std::optional<Shot> preview = std::nullopt);
+              std::optional<Shot> preview = std::nullopt, bool showShotTraces = true);
     const std::uint32_t* pixels() const { return pixels_.data(); }
     void saveBitmap(const std::filesystem::path& path) const;
 private:

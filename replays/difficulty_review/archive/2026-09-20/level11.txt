@@ -1,0 +1,75 @@
+# Difficulty review 2026-09-20: displayed Level 11, source ID 15
+# Origin: build/difficulty_audit/latest15_path_block1.txt
+# Verified normal exit; representative route, not a shortest-path claim.
+level 15
+s 0 720.000000 360.100000
+s 1 541.000000 200.000000
+w 3
+d 8
+d 8
+z 8
+dw 8
+d 8
+d 8
+z 8
+d 8
+d 8
+d 8
+dw 8
+d 8
+z 8
+dw 8
+d 8
+d 8
+s 1 541.000000 200.000000
+z 8
+d 8
+s 0 720.000000 380.100000
+w 8
+a 8
+a 8
+a 8
+a 8
+s 1 260.000000 399.900000
+dw 8
+d 8
+d 8
+d 8
+d 8
+s 1 260.000000 360.100000
+d 8
+d 8
+d 8
+d 8
+d 8
+dw 8
+dw 8
+s 0 720.000000 399.900000
+d 8
+d 8
+d 8
+d 8
+w 8
+s 1 260.000000 360.100000
+s 0 421.000000 200.000000
+a 8
+s 1 260.000000 380.100000
+w 8
+d 8
+d 8
+d 8
+a 8
+d 8
+s 1 720.000000 399.900000
+dw 8
+dw 8
+d 8
+d 8
+d 8
+d 8
+d 8
+a 8
+a 8
+a 8
+a 8
+e 1

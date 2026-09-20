@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $buildDir = Join-Path $projectRoot 'build'
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
-$core = @('src/levels.cpp', 'src/editor_level.cpp', 'src/portal.cpp', 'src/physics.cpp', 'src/game.cpp') |
+$core = @('src/levels.cpp', 'src/editor_level.cpp', 'src/portal.cpp', 'src/physics.cpp', 'src/game.cpp', 'src/tutorial.cpp') |
     ForEach-Object { Join-Path $projectRoot $_ }
 $flags = @('-std=c++17', '-Wall', '-Wextra', '-Wpedantic', '-I', (Join-Path $projectRoot 'include'))
 if ($DebugBuild) { $flags += @('-O0', '-g') } else { $flags += '-O2' }

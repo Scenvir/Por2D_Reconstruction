@@ -1,4 +1,4 @@
-# Difficulty review 2026-09-20: displayed Level 12, source ID 13
+# Difficulty review 2026-09-20: displayed Level 13, source ID 13
 # Origin: build/difficulty_audit/play13_block0.txt
 # Verified normal exit; representative route, not a shortest-path claim.
 level 13

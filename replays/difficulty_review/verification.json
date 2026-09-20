@@ -1,91 +1,145 @@
 {
-  "date": "2026-09-20",
-  "version": "por2_reconstructed, fixed downward gravity",
+  "date": "2026-09-20T19:31:13+08:00",
+  "version": "por2_reconstructed, fixed downward gravity, current campaign order",
+  "executable_sha256": "5a725ddf6aace06594ca311a08b155b4cdf4134ce729d95fa31ab3b1b0a1087d",
   "source_sha256": {
-    "src/levels.cpp": "28f43d051c46d396c4ee8365160625e12b7429730f4595efe2de3a0b363f32f6",
-    "src/portal.cpp": "1193bc39122ed5d74b75f38ade3ac665e8d3fe706fddfa861dd21bd2e19ed1bc",
-    "src/physics.cpp": "a73718d4a03cb84d7fc69b9b47981eb0f84d9af6ba41a94f0a5ca51240e328ec",
-    "src/game.cpp": "8961bfd580c0c1924266866665b425d753320513d7ea9575f0079eec7667ac4b",
-    "src/main.cpp": "4e656a54d00dedb745ce1cbd2a5c408abc6488afcba6b2e540725679bf31dc25",
+    "build.ps1": "4c5e8ea32eb32ed810b68ad0dcb0443cc7633fb1057df9d1d9de4ae02b3af020",
+    "CMakeLists.txt": "1deb01d3c1be8e38db32250e774a90d8809311bb28f1b487c84bda55a54ecc10",
+    "include/por2/game.hpp": "45456877c3def5250ec5ebda6e0028190a495328a5d3aadc7b35087ac1059fa2",
+    "include/por2/level.hpp": "f5452f389ac4d3fed3afa90911af13c2cc1c1375d7e1509e178aed081febe14e",
+    "include/por2/physics.hpp": "13804a460e9ebaf280ba2e9ee4c2f1b323c9a0d9d5cd2e71d37526aac70f3377",
+    "include/por2/portal.hpp": "92b24407d9351080cb00825b2b51b3bdd0341ca3df6c86a01678843c2d269123",
+    "include/por2/render.hpp": "b70bf191f9718c1e39edbd3478dca9005be80dde3873e1be8250ed7cee65ddcd",
+    "include/por2/replay.hpp": "ff00d49c05eac1a1830711cf20f867323c8a1a58d1be72bae20f6c2089d085b0",
     "include/por2/types.hpp": "28192f5077edde2a35c71479a3dd8cce9a80938d81559df28384bf10ca2d2251",
-    "include/por2/level.hpp": "09637028678fe784aabaf1fc31b418058512ae3fc0e2332f26962e2f2d35455a",
-    "include/por2/replay.hpp": "dcb21f6e0ce10c916ac79e011ac0f212f499751a7bb70bd31f1ac3f73592682b"
+    "src/editor_level.cpp": "b24600caef3755f84b434dd4d46cced58f3e7c5b4b0b03cca83dd3b50415caa3",
+    "src/game.cpp": "1282cf6a0ef33f3e641eab4ba8babaf2dbe57fd788762e3ecc52351523698e9b",
+    "src/levels.cpp": "c0b0b28765da2a6f5781abe1970bc908089d358dc2f0b5c39a0165eb85694c54",
+    "src/main.cpp": "369220f8731e56994a2730e5d8aa03eb0129386969503a0a9010eb06083bbfdd",
+    "src/physics.cpp": "a73718d4a03cb84d7fc69b9b47981eb0f84d9af6ba41a94f0a5ca51240e328ec",
+    "src/portal.cpp": "1193bc39122ed5d74b75f38ade3ac665e8d3fe706fddfa861dd21bd2e19ed1bc",
+    "src/render.cpp": "1e0b1483922ce1c7e780a0d3873c83a4b62546442db871744f305b87be553dbc"
   },
   "routes": [
     {
+      "display_level": 0,
+      "name": "概念",
+      "source_id": 0,
       "script": "level00.txt",
       "result": "replay=cleared level=5 frames=47 position=300,340 velocity=0,0",
       "sha256": "d824cbe95c1f5b53517745b0afeb364f95bf0515e8032750689d8f27c774fda3"
     },
     {
+      "display_level": 1,
+      "name": "高山",
+      "source_id": 5,
       "script": "level01.txt",
       "result": "replay=cleared level=6 frames=61 position=300,340 velocity=0,0",
       "sha256": "8fcc6c832999863960b6ad8007e403d8285ce9d455677a2867b522a0ecf9cadb"
     },
     {
+      "display_level": 2,
+      "name": "旋转",
+      "source_id": 6,
       "script": "level02.txt",
       "result": "replay=cleared level=7 frames=159 position=300,340 velocity=0,0",
       "sha256": "48b3f3bf5a0d8064a5162dff51f7d4390ce0ddc8946814b651f5cfb6181500b4"
     },
     {
+      "display_level": 3,
+      "name": "远跳",
+      "source_id": 7,
       "script": "level03.txt",
       "result": "replay=cleared level=8 frames=81 position=340,340 velocity=0,0",
       "sha256": "b389e27e6271f27b0421a59d50458f24a0eaa29a4084685e438cc8819029a3ed"
     },
     {
+      "display_level": 4,
+      "name": "大脑",
+      "source_id": 8,
       "script": "level04.txt",
       "result": "replay=cleared level=9 frames=127 position=320,360 velocity=0,0",
       "sha256": "1b72eb3d3ecb4e0fb52228bae15c80bc020afd1fa1cd356ad1e378edc9da6152"
     },
     {
+      "display_level": 5,
+      "name": "穿梭",
+      "source_id": 9,
       "script": "level05.txt",
       "result": "replay=cleared level=10 frames=173 position=360,380 velocity=0,0",
       "sha256": "7855d59149d919ce9340eff12000a008a1c3f611b27488b69a45c3c287f9a983"
     },
     {
+      "display_level": 6,
+      "name": "支点",
+      "source_id": 10,
       "script": "level06.txt",
       "result": "replay=cleared level=3 frames=210 position=200,320 velocity=0,0",
       "sha256": "0df1975625c0fba0a63a6e8fa4ea2a8247e0148118f147407c3877c09f2e6091"
     },
     {
+      "display_level": 7,
+      "name": "裂缝",
+      "source_id": 3,
       "script": "level07.txt",
       "result": "replay=cleared level=14 frames=192 position=300,340 velocity=0,0",
       "sha256": "2982cf4e1a0d4b56058f80f2dd36819e478c1224b228eccde2b833dc06770dfe"
     },
     {
+      "display_level": 8,
+      "name": "铁砧",
+      "source_id": 14,
       "script": "level08.txt",
       "result": "replay=cleared level=11 frames=266 position=320,360 velocity=0,0",
       "sha256": "b377d2667b1ac11b28025912bb6a90efbd025ee1294a99911dc7d851f738dcbd"
     },
     {
+      "display_level": 9,
+      "name": "倒立",
+      "source_id": 11,
       "script": "level09.txt",
       "result": "replay=cleared level=12 frames=150 position=320,360 velocity=0,0",
       "sha256": "f05e1aa190c2dd9431c75977e10699a8a00ff4b7dca944dda4c0ef9fc792abf5"
     },
     {
+      "display_level": 10,
+      "name": "远见",
+      "source_id": 12,
       "script": "level10.txt",
       "result": "replay=cleared level=15 frames=254 position=660,320 velocity=0,0",
       "sha256": "5a0779b301e076a92795be24b07f880bc508069584500578ba85784d5b92bb91"
     },
     {
+      "display_level": 11,
+      "name": "愚者",
+      "source_id": 15,
       "script": "level11.txt",
-      "result": "replay=cleared level=16 frames=479 position=101,141 velocity=0,0",
+      "result": "replay=cleared level=13 frames=479 position=260,380 velocity=0,0",
       "sha256": "af5361f6aa0e8165061054e0bf940e8d091d4e70755270e85e5145ad6aefec92"
     },
     {
+      "display_level": 12,
+      "name": "阀门",
+      "source_id": 13,
       "script": "level12.txt",
-      "result": "replay=cleared level=13 frames=464 position=260,380 velocity=0,0",
-      "sha256": "fecabdd19218d25e9a5dbfa8d5b5e68082cd048fabeb1bfcbb4930eb56178273"
-    },
-    {
-      "script": "level13.txt",
       "result": "replay=cleared level=4 frames=123 position=240,320 velocity=0,0",
-      "sha256": "afdf32fec738eef5fcac6f24a33fb7de2518f9816b7802eb599e3c5d84960a0d"
+      "sha256": "f98c4c444a6d3a2c20e519b268327729b9c888becf6e3656d2b5fca4dac8796e"
     },
     {
+      "display_level": 13,
+      "name": "深渊",
+      "source_id": 4,
+      "script": "level13.txt",
+      "result": "replay=cleared level=16 frames=166 position=261,201 velocity=0,0",
+      "sha256": "e034da0b1e0c7b0f211d6372e585bdace40338315bff2294e82bde7537a83903"
+    },
+    {
+      "display_level": 14,
+      "name": "天梯",
+      "source_id": 16,
       "script": "level14.txt",
-      "result": "replay=cleared level=4 frames=166 position=583,182 velocity=-6,0",
-      "sha256": "a9dc5c65577226136de6b5eb1796df65b25c04430e9bb1a06e3ede5a377a6f40"
+      "result": "replay=cleared level=16 frames=585 position=696,102 velocity=3,0",
+      "sha256": "705b7003be50e555ae5d2178ed6bd9edd213d4cf255f9935f9d8826bcdc2f007"
     }
   ]
 }

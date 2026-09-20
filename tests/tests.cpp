@@ -1,5 +1,6 @@
 #include "por2/render.hpp"
 #include "por2/replay.hpp"
+#include "por2/tutorial.hpp"
 #include "legacy_bridge.hpp"
 #include <functional>
 #include <iostream>
@@ -37,6 +38,74 @@ void exitOrientation() {
         expect(sample(exit.center()-forward*23)==0xC8C8C8,"exit tail has no head marker");
         expect(game.level().exit->direction==exit.direction,"render does not change exit orientation");
     }
+}
+
+void victoryCrown(){
+    Renderer renderer;
+    for(int d=0;d<4;++d){
+        Game game(Campaign.back());
+        auto& level=const_cast<Level&>(game.level());
+        level.map=TileMap{};
+        level.exit=Body{{400,250},static_cast<Direction>(d)};
+        auto& player=const_cast<Player&>(game.player());
+        player.body=*level.exit;
+        expect(!game.crowned(),"final level has no crown before victory");
+        InputFrame input;input.useExit=true;game.tick(input);
+        expect(game.finished()&&game.crowned(),"Level 14 exit awards crown");
+        const auto before=player.body;
+        renderer.draw(game,false);
+        const auto forward=directionVector(before.direction);
+        const auto sample=[&](Vec2 p){return renderer.pixels()[static_cast<int>(std::lround(p.y))*WindowWidth+static_cast<int>(std::lround(p.x))];};
+        expect(sample(before.center()+forward*38)==0xFFD700,"crown follows head in four directions");
+        expect(sample(before.center()-forward*38)==0,"no crown at tail");
+        expect(near(before.head(),player.body.head())&&near(before.position,player.body.position),"crown does not modify physical body");
+        Game custom(level);const_cast<Player&>(custom.player()).body=*level.exit;custom.tick(input);
+        expect(custom.finished()&&!custom.crowned(),"custom map with final source ID does not earn campaign crown");
+        renderer.crownUnlocked=true;
+        Game next(0);auto& nextLevel=const_cast<Level&>(next.level());nextLevel.map=TileMap{};nextLevel.exit.reset();
+        const_cast<Player&>(next.player()).body=before;
+        renderer.draw(next,false);
+        expect(sample(before.center()+forward*38)==0xFFD700,"unlocked crown remains in later games");
+        renderer.crownVisible=false;renderer.draw(next,false);
+        expect(sample(before.center()+forward*38)==0,"crown visibility can be disabled");
+        renderer.crownUnlocked=false;renderer.crownVisible=true;
+    }
+}
+
+void liveTutorial(){
+    Tutorial tutorial;
+    const auto spawn=tutorial.scene.player().body.position;
+    for(int i=0;i<20;++i)tutorial.update();
+    expect(tutorial.scene.player().body.position!=spawn,"controls tutorial uses live physics");
+    for(int stage=1;stage<=3;++stage){
+        tutorial.reset(stage);
+        const int phases=stage==1?2:stage==2?3:4;
+        for(int phase=0;phase<phases;++phase){
+            for(int i=0;i<120;++i){tutorial.update();if(i==70){
+                const bool expected=stage==1?phase==0:stage==2?phase==1:true;
+                expect(tutorial.attempted&&tutorial.accepted==expected,"live lesson shooting result matches surface/center rules");
+                if(stage==3){
+                    expect(tutorial.scene.player().body.direction==static_cast<Direction>(phase),"orientation tutorial rotates the real actor");
+                    const auto hit=castShot(tutorial.scene.level().map,tutorial.scene.traversal().aimOrigin,tutorial.aim->target);
+                    expect(hit.has_value(),"orientation lesson ray reaches wall");
+                    const auto expectedPortal=choosePortal(tutorial.scene.level().map,{},tutorial.scene.traversal().aimOrigin,tutorial.scene.player().body.direction,*hit);
+                    expect(expectedPortal&&tutorial.scene.portals()[0].code==expectedPortal->code,"orientation lesson uses actual portal orientation rule");
+                }
+            }}
+        }
+    }
+    tutorial.reset(4);bool locked=false,rejected=false,replaced=false,released=false;
+    for(int i=0;i<470;++i){
+        tutorial.update();
+        locked|=tutorial.scene.traversal().lockedPortal>=0;
+        if(tutorial.heldFrames==40)rejected=tutorial.attempted&&!tutorial.accepted;
+        if(tutorial.heldFrames==140)replaced=tutorial.attempted&&tutorial.accepted;
+        if(tutorial.heldFrames>200&&tutorial.scene.traversal().lockedPortal<0)released=true;
+    }
+    expect(locked,"locking lesson enters real partial-body traversal");
+    expect(rejected,"locking lesson actually rejects locked portal shot");
+    expect(replaced,"locking lesson actually moves minority portal");
+    expect(released,"locking lesson shows release after leaving the portal");
 }
 
 void editorMaps(){
@@ -616,6 +685,8 @@ void stress() {
 
 int main() {
     const std::pair<const char*, std::function<void()>> suites[]{
+        {"cosmetic Level 14 victory crown in four directions", victoryCrown},
+        {"live tutorial physics, shooting, orientations and portal locking", liveTutorial},
         {"editor JSON validation, custom gameplay and self-contained recordings", editorMaps},
         {"recording combined inputs, exact replay and compression", recordingRoundTrip},
         {"exit head direction markers in all four orientations", exitOrientation},

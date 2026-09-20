@@ -1,38 +1,105 @@
-# Difficulty review 2026-09-20: displayed Level 14, source ID 4
-# Origin: build/difficulty_audit/play4_block0.txt
-# Verified normal exit; representative route, not a shortest-path claim.
-level 4
-s 0 160 340.1
-a 8
-s 1 210 420
+# Current campaign: displayed Level 14 (天梯), source ID 16
+# Origin: replays/level12_new_layout/route1.txt; current layout.
+level 16
 d 8
-s 1 299.9 300
+d 8
+s 0 339.9 140
+a 8
+a 8
+s 1 240 260.1
+a 8
+d 8
+a 8
+a 8
+d 8
 z 3
 a 8
+s 1 240 260.1
+z 3
+z 3
 d 8
-s 0 219.9 420
-d 8
-aw 8
-s 1 380 460.1
+dw 8
+s 0 520 260.1
 a 8
 a 8
-z 8
-d 8
-s 1 320 180.1
-z 8
-s 0 500 280.1
-a 3
 a 8
-s 1 439.9 140
+a 8
 d 8
-s 1 320 180.1
+a 8
+z 3
+s 1 399.9 300
+dw 8
+d 8
+d 8
 d 3
-s 0 439.9 140
+s 0 600 140.1
+dw 8
+d 8
+s 1 399.9 300
+a 8
+z 8
+a 8
+s 0 240 260.1
+a 8
+s 1 300.1 460
+z 8
+z 3
+d 8
+a 3
+s 0 240 260.1
+s 0 320.1 140
+z 3
+s 0 240 260.1
+a 8
+a 8
 a 8
 d 8
-d 8
-s 0 500 280.1
-s 1 640 199.9
-d 8
 a 8
+s 1 319.9 460
+dw 8
+w 8
+d 8
+w 8
+dw 8
+z 3
+d 8
+d 8
+z 8
+dw 8
+z 8
+w 8
+dw 8
+z 8
+w 8
+d 8
+s 1 740 380.1
+dw 8
+d 3
+w 3
+s 1 580 260.1
+s 1 720 200.1
+a 8
+a 8
+s 1 580 260.1
+a 8
+w 8
+s 0 320.1 140
+s 0 320.1 140
+a 8
+a 8
+s 0 240 260.1
+z 8
+a 8
+a 8
+a 8
+a 8
+z 3
+s 0 720 200.1
+a 8
+s 1 600 140.1
+d 8
+a 3
+d 8
+dw 8
+a 3
 e 1

@@ -1,0 +1,12 @@
+# Difficulty review 2026-09-20: displayed Level 0, source ID 0
+# Origin: build/difficulty_audit/search_0.txt
+# Verified normal exit; representative route, not a shortest-path claim.
+level 0
+d 8
+d 8
+d 8
+d 8
+d 8
+d 3
+a 3
+e 1

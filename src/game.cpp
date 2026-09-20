@@ -107,8 +107,13 @@ void Game::tick(const InputFrame& input) {
     // One authoritative post-physics pose feeds head marker, aiming and rendering.
     traversal_ = describeTraversal(player_, motion_, portals_);
     for (const auto& shot : input.shots) {
-        firePortal(level_.map, player_, motion_, portals_, shot, traces_);
+        shoot(shot);
     }
     traversal_ = describeTraversal(player_, motion_, portals_);
+}
+bool Game::shoot(const Shot& shot) {
+    const bool accepted=firePortal(level_.map,player_,motion_,portals_,shot,traces_);
+    traversal_=describeTraversal(player_,motion_,portals_);
+    return accepted;
 }
 } // namespace por2
