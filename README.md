@@ -8,6 +8,10 @@ Por2D 是一款二维传送门解谜游戏。你控制一个淡黄色矩形角�
 
 第一次游玩请阅读 [新手教程](新手教程.md)。
 
+## 下载免安装版
+
+不需要编译源码的玩家可从 [GitHub Releases](https://github.com/Scenvir/Por2D_Reconstruction/releases/latest) 下载 `Por2D-Basic-Windows-x64.zip`。完整解压后双击 `Por2D.exe`；压缩包同时包含新手教程、示例地图和离线地图编辑器。
+
 ## 游戏特色
 
 - **位置、姿态与惯性解谜**：两扇门双向连通，身体和速度随门的方向变换；相同深浅的渐变位置彼此对应。
