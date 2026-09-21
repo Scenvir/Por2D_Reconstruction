@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Por2D 地图编辑器</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#10151e;color:#e6edf6;font:14px system-ui,"Microsoft YaHei",sans-serif}header{padding:20px 26px;border-bottom:1px solid #303b4d;display:flex;gap:20px;align-items:center;flex-wrap:wrap}h1{font-size:22px;margin:0}header span,.hint{color:#9caec6}main{display:grid;grid-template-columns:240px minmax(0,1fr);gap:20px;padding:20px}aside{background:#192231;padding:16px;border-radius:12px}h2{font-size:14px;margin:18px 0 10px;color:#a8bfdc}button,input,select{font:inherit;border:1px solid #42516a;border-radius:6px;padding:8px;background:#202e42;color:#edf4ff}button{cursor:pointer}button:hover{background:#334967}button:disabled{opacity:.4;cursor:default}button.active{border-color:#7be4cd;background:#235448}input,select{width:100%;margin:5px 0 10px}.tools{display:grid;gap:7px}.tools button{text-align:left}.actions{display:flex;gap:8px;flex-wrap:wrap}.stage{overflow:auto;background:#121923;border:1px solid #35425a;border-radius:10px;padding:12px}canvas{display:block;touch-action:none;cursor:crosshair}p{line-height:1.7}.status{padding:12px 0;min-height:44px;color:#7be4cd;white-space:pre-wrap}.warn{color:#ffc58a}.badge{font-size:12px;color:#a4b6ce}label{display:block}.coordinates{font-family:monospace;color:#a8bfdc;margin-bottom:10px}details{margin-top:14px}summary{cursor:pointer}a{color:#7be4cd}@media(max-width:800px){main{grid-template-columns:1fr}aside{display:grid;grid-template-columns:1fr 1fr;gap:12px}}
+</style>
+<header><h1>Por2D <span>/ 地图编辑器</span></h1><span>基础版 · 50 × 30 · 本地离线编辑</span><div class="actions"><button id="new">新建</button><button id="open">打开地图</button><button id="save">保存地图 JSON</button><button id="export">导出 C++</button></div></header>
+<main><aside><section><h2>画笔 · 数字键 1–5</h2><div class="tools" id="tools">
+<button data-tool="0">1　空气 / 擦除</button><button data-tool="1" class="active">2　□ 可开传送门方块</button><button data-tool="2">3　■ 不可开传送门方块</button><button data-tool="spawn">4　● 角色出生点</button><button data-tool="exit">5　◎ 过关点</button></div>
+<h2>选择元素</h2><button data-tool="select">V　框选 / 移动</button><p class="hint">拖出矩形，选中范围内的方块及相交的出生点、出口；拖动蓝色选中元素整体移动。在其他位置拖动重新框选。Esc 取消拖动或清除选择。移动不能越界或覆盖其他方块，支持撤销 / 重做。</p>
+<h2>绘制方式</h2><select id="shape" aria-label="绘制方式"><option value="brush">自由画笔</option><option value="rectangle">实心矩形</option></select><p class="hint">矩形：选方块后拖动至对角，松开填充；右键矩形擦除方块。Esc 取消。出生点与过关点仍为单点放置。</p>
+<h2>身体朝向</h2><select id="direction" aria-label="身体朝向"><option value="0">↑ 头朝上</option><option value="1">→ 头朝右</option><option value="2">↓ 头朝下</option><option value="3">← 头朝左</option></select><p class="hint">选出生点或过关点后，点击网格放置。朝向选择会更新已选标记。出口的三角箭头及头端横线表示过关时要求的头部方向，不是重力方向。每类标记仅有一个；右键清除标记或方块。</p><div class="actions"><button id="undo">撤销</button><button id="redo">重做</button></div></section>
+<section><h2>地图信息</h2><label>名称<input id="name" maxlength="80" value="我的地图"></label><label>关卡评语<input id="commentary" maxlength="200" placeholder="可选"></label><label>视图缩放<select id="zoom"><option value=".75">75%</option><option value="1" selected>100%</option><option value="1.5">150%</option><option value="2">200%</option></select></label><button id="validate">检查地图</button><p class="hint">格坐标原点在左上，X 向右，Y 向下。每格为 20×20 游戏像素。</p></section></aside>
+<section><div class="coordinates" id="coords">移动鼠标查看格坐标与像素坐标</div><div class="stage"><canvas id="map" aria-label="地图编辑网格"></canvas></div><div class="status" id="status" role="status">选择画笔，在网格上按住左键拖动绘制。</div><div id="validation" class="warn"></div>
+<details><summary>使用说明与保存格式</summary><p>左键绘制，右键擦除；出生点与过关点按角色实际大小显示（18×58 或 58×18 像素），箭头代表头部朝向。Ctrl+Z 撤销，Ctrl+Y / Ctrl+Shift+Z 重做，Ctrl+S 下载地图。</p><p>“保存地图 JSON”下载可再次打开的编辑器文件。把下载的 JSON 文件复制到游戏旁的 levels 文件夹，重新启动游戏后，即可在关卡选择末尾找到“自定义”地图。编辑器不依赖网络，也不会自动保存，关闭或刷新页面前请先保存。</p><p>地图检查会提示标记缺失、身体与墙重叠或触碰边界；不保证关卡一定可解。空白地图可以先在底部绘制地板，再将出生点放在地板上方三格的位置。</p></details></section></main>
+<input id="file" type="file" accept=".json,application/json" hidden>
+<script src="model.js"></script><script src="editor.js"></script>
+</html>

@@ -18,12 +18,6 @@ jobs:
       - name: Check out the basic edition
         uses: actions/checkout@v4
 
-      - name: Check out the shared map editor
-        uses: actions/checkout@v4
-        with:
-          repository: Scenvir/Por2D
-          path: por2d-four-way
-
       - name: Configure and build
         shell: pwsh
         run: |
@@ -38,15 +32,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $package, "$package\levels", "$package\editor" | Out-Null
           Copy-Item .\build\Release\Por2D.exe, .\新手教程.md, .\游玩说明.txt -Destination $package
           Copy-Item .\levels\example.json -Destination "$package\levels"
-          Copy-Item .\por2d-four-way\editor\index.html, .\por2d-four-way\editor\editor.js, .\por2d-four-way\editor\model.js -Destination "$package\editor"
-
-          $editorPath = Join-Path $package 'editor\index.html'
-          $editor = Get-Content -Raw -Encoding UTF8 $editorPath
-          $editor = $editor.Replace('四向重力版 · 50 × 30 · 本地离线编辑', '基础版 · 50 × 30 · 本地离线编辑')
-          $oldHelp = '“保存地图 JSON”下载可再次打开的编辑器文件，请保管下载文件。编辑器不依赖网络或自动云端保存；浏览器刷新或关闭前请保存。“导出 C++”生成与游戏 Level 数据结构兼容的函数，需要接入游戏源码并重新编译，JSON 暂不直接在游戏中加载。'
-          $newHelp = '“保存地图 JSON”下载可再次打开的编辑器文件。把下载的 JSON 文件复制到游戏旁的 levels 文件夹，重新启动游戏后，即可在关卡选择末尾找到“自定义”地图。编辑器不依赖网络，也不会自动保存，关闭或刷新页面前请先保存。'
-          $editor = $editor.Replace($oldHelp, $newHelp)
-          Set-Content -Encoding UTF8 -NoNewline -Path $editorPath -Value $editor
+          Copy-Item .\editor\index.html, .\editor\editor.js, .\editor\model.js -Destination "$package\editor"
 
           Compress-Archive -LiteralPath $package -DestinationPath .\Por2D-Basic-Windows-x64.zip -CompressionLevel Optimal
           (Get-FileHash -Algorithm SHA256 .\Por2D-Basic-Windows-x64.zip).Hash + '  Por2D-Basic-Windows-x64.zip' | Set-Content -Encoding ASCII .\SHA256SUMS.txt
