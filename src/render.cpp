@@ -60,7 +60,7 @@ void Renderer::body(const Body& value, std::uint32_t color, const Portal* clip) 
               static_cast<int>(std::ceil(r.right)) - 1, static_cast<int>(std::ceil(r.bottom)) - 1, color);
 }
 
-void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot> preview, bool showShotTraces) {
+void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot> preview, bool showShotTraces, bool showWallDirections) {
     std::fill(pixels_.begin(), pixels_.end(), 0);
     if (grid) {
         for (int x = 0; x < WindowWidth; x += TileSize) line({x, 0}, {x, WindowHeight - 1}, 0x505050);
@@ -102,6 +102,27 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
             rectangle(x * TileSize + 1, y * TileSize + 1, x * TileSize + 19, y * TileSize + 19,
                       tile == Tile::PortalSurface ? 0xFFFFFF : 0x323232);
         }
+    if (showWallDirections) {
+        for (int x = 0; x < MapWidth; ++x) for (int y = 0; y < MapHeight; ++y) {
+            if (game.level().map.at(x,y) != Tile::PortalSurface) continue;
+            const Vec2 center{x*TileSize+10,y*TileSize+10};
+            // Use actual firing rules, including visibility, placement space and locks.
+            const auto hit = castShot(game.level().map,game.traversal().aimOrigin,center);
+            if (!hit || hit->tile.x != x || hit->tile.y != y) continue;
+            for (int id = 0; id < 2; ++id) {
+                auto portals = game.portals();
+                std::vector<ShotTrace> traces;
+                if (!firePortal(game.level().map,game.player(),game.motion(),portals,Shot{id,center},traces)) continue;
+                const Vec2 forward = decode(portals[id]).tangent * -1;
+                const Vec2 side{-forward.y,forward.x};
+                const Vec2 tip = center + forward * 6;
+                line(center-forward*6,tip,0x909090,2);
+                line(tip,tip-forward*4+side*3,0x909090,2);
+                line(tip,tip-forward*4-side*3,0x909090,2);
+                break;
+            }
+        }
+    }
     for (int id = 0; id < 2; ++id) {
         const auto& portal = game.portals()[id];
         if (!portal.active()) continue;

@@ -171,7 +171,7 @@ struct Application {
         if(t.stage==0)detail=L"身体按屏幕方向移动。点击下方“键位设置”可改键；返回菜单后继续教学。";
         if(t.stage==1)detail=t.phase==0?L"白色墙：连续三格可放门，绿色射线与箭头表示当前可以放置。":L"深灰墙：不能放门。红色射线和叉号表示放置失败。";
         if(t.stage==2)detail=t.phase==1?L"命中第 2 格：它是连续三格的中间，能够放门。":L"命中边上的格子：不会自动吸附到中间，三格墙段容不下新门，放置失败。";
-        if(t.stage==3)detail=L"红点是角色头部；同一面墙、同一目标，改变头朝向会改变门的渐变和箭头方向。";
+        if(t.stage==3)detail=L"红点是角色头部；四面白墙上的灰色箭头表示当前在此处开门的朝向，随角色朝向和位置变化。";
         if(t.stage==4)detail=t.phase==2?L"蓝门与橙门朝向相反，仍然亮对亮、暗对暗。角色从蓝门进入、橙门出来后，头朝下了。":L"传送始终亮对亮、暗对暗；观察两端标记和跨门的身体。红点标出角色头部。";
         if(t.stage==5)detail=t.phase==0?L"身体较大的一侧锁定（金框）。尝试移动这扇门会失败，原门保持不变。":t.phase==1?L"身体较小的一侧可以换门：射击后，另一端露出的身体也移动到新的门口。":L"继续穿过门，观察金框随本体侧变化；完全离开后解除锁定。";
         paragraph(dc,{40,58,900,106},detail,18,RGB(176,201,227));
@@ -949,7 +949,7 @@ struct Application {
                     tutorial.aim=menuPointer?std::optional<por2::Shot>{{previewPortal,*menuPointer}}:std::nullopt;
                 }else tutorial.update();
             }
-            renderer.draw(tutorial.scene,true,true,tutorialPractice&&!previewEnabled?std::nullopt:tutorial.aim,false);
+            renderer.draw(tutorial.scene,true,true,tutorialPractice&&!previewEnabled?std::nullopt:tutorial.aim,false,tutorial.stage==3);
             InvalidateRect(window,nullptr,FALSE);return;
         }
         por2::InputFrame input;
@@ -1254,6 +1254,8 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             const std::string prefix=!level.editorJson.empty()?"自定义":entry!=por2::Campaign.end()?"Level"+std::to_string(entry-por2::Campaign.begin()):"实验地图";
             const std::string caption = prefix + "  " + level.name;
             const std::wstring wide=utf8(caption);
+            if(level.id==0&&!app->game.finished())
+                label(dc,{200,510,800,550},L"到达目标点后按 "+keyName(app->bindings[3])+L" 过关",22,RGB(190,190,190));
             RECT levelArea{690, 548, 975, 588};
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(220, 230, 245));

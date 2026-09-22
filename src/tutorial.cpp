@@ -7,6 +7,10 @@ void Tutorial::resetScene(Direction direction){
     level.map.fill(Tile::Solid,12,7,12,20);
     level.map.fill(Tile::PortalSurface,36,7,36,20);
     level.map.fill(Tile::Solid,12,21,36,21);
+    if(stage==3){
+        level.map.fill(Tile::PortalSurface,12,7,36,7);
+        level.map.fill(Tile::PortalSurface,12,21,36,21);
+    }
     if(stage==1||stage==2)level.map.fill(Tile::PortalSurface,12,15,12,17);
     else level.map.fill(Tile::PortalSurface,12,7,12,20);
     level.spawn={{stage==5?300:430,(static_cast<int>(direction)%2)?402:362},direction};
