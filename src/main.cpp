@@ -15,6 +15,7 @@
 #include <random>
 
 namespace {
+static_assert(L"中文"[0] == 0x4E2D && L"中文"[1] == 0x6587, "Source must be compiled as UTF-8");
 std::wstring utf8(const std::string& text) {
     if (text.empty()) return {};
     const int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),static_cast<int>(text.size()),nullptr,0);
