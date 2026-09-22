@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <commdlg.h>
+#include <shlobj.h>
 #include "por2/replay.hpp"
 #include "por2/render.hpp"
 #include "por2/tutorial.hpp"
@@ -15,6 +16,79 @@
 #include <random>
 
 namespace {
+std::filesystem::path executableFolder() {
+    wchar_t executable[32768]{};
+    const DWORD length=GetModuleFileNameW(nullptr,executable,32768);
+    if(!length || length>=32768)throw std::runtime_error("Cannot locate game folder");
+    return std::filesystem::path(executable).parent_path();
+}
+std::filesystem::path resourceFolder() {
+    auto folder=executableFolder();
+    // Support both build/Por2D.exe and CMake's build/Release/Por2D.exe.
+    if(folder.parent_path().filename()==L"build")folder=folder.parent_path();
+    return folder.filename()==L"build"?folder.parent_path():folder;
+}
+std::filesystem::path prepareDataFolder(const std::filesystem::path& executable,
+                                      const std::filesystem::path& local, bool portable) {
+    const auto directory=portable?executable:local/L"Por2D-Basic";
+    std::filesystem::create_directories(directory);
+    // Keep the original intact and never replace settings from a previous migration.
+    if(!portable && !std::filesystem::exists(directory/L"keybindings.ini") &&
+       std::filesystem::is_regular_file(executable/L"keybindings.ini"))
+        std::filesystem::copy_file(executable/L"keybindings.ini",directory/L"keybindings.ini");
+    return directory;
+}
+std::filesystem::path userDataFolder() {
+    const auto executable=executableFolder();
+    if(std::filesystem::is_regular_file(executable/L"portable.txt"))
+        return prepareDataFolder(executable,{},true);
+    PWSTR local=nullptr;
+    if(FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&local)))
+        throw std::runtime_error("Cannot locate Windows user data folder");
+    const std::filesystem::path directory(local);
+    CoTaskMemFree(local);
+    return prepareDataFolder(executable,directory,false);
+}
+void enableDpiAwareness() {
+    using SetAwareness=BOOL(WINAPI*)(HANDLE);
+    const auto setAwareness=reinterpret_cast<SetAwareness>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetProcessDpiAwarenessContext"));
+    if(!setAwareness || !setAwareness(reinterpret_cast<HANDLE>(-4)))SetProcessDPIAware();
+}
+RECT fitToWorkArea(RECT bounds, const RECT& work) {
+    const LONG width=std::min(bounds.right-bounds.left,work.right-work.left);
+    const LONG height=std::min(bounds.bottom-bounds.top,work.bottom-work.top);
+    bounds.left=std::clamp(bounds.left,work.left,work.right-width);
+    bounds.top=std::clamp(bounds.top,work.top,work.bottom-height);
+    bounds.right=bounds.left+width;bounds.bottom=bounds.top+height;
+    return bounds;
+}
+void checkDataFolders() {
+    const auto root=std::filesystem::temp_directory_path()/
+        (L"por2-data-test-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
+    const auto executable=root/L"游戏目录", local=root/L"用户目录";
+    const auto target=local/L"Por2D-Basic";
+    struct Cleanup {
+        std::vector<std::filesystem::path> paths;
+        ~Cleanup(){for(const auto& path:paths){std::error_code error;std::filesystem::remove(path,error);}}
+    } cleanup{{target/L"keybindings.ini",executable/L"keybindings.ini",target,local,executable,root}};
+    std::filesystem::create_directories(executable);
+    {std::ofstream file(executable/L"keybindings.ini");file<<"legacy";}
+    if(prepareDataFolder(executable,local,false)!=target)throw std::runtime_error("wrong user data folder");
+    std::string value;
+    {std::ifstream file(target/L"keybindings.ini");file>>value;}
+    if(value!="legacy")throw std::runtime_error("legacy settings migration failed");
+    {std::ofstream file(target/L"keybindings.ini");file<<"current";}
+    prepareDataFolder(executable,local,false);
+    {std::ifstream file(target/L"keybindings.ini");file>>value;}
+    if(value!="current")throw std::runtime_error("migration overwrote current settings");
+    if(prepareDataFolder(executable,local,true)!=executable)throw std::runtime_error("portable data folder failed");
+    {std::ifstream file(executable/L"keybindings.ini");file>>value;}
+    if(value!="legacy")throw std::runtime_error("migration modified original settings");
+    const RECT fit=fitToWorkArea({-200,-200,1800,1000},{0,0,800,560});
+    if(fit.left!=0||fit.top!=0||fit.right!=800||fit.bottom!=560)
+        throw std::runtime_error("small desktop window fitting failed");
+}
 static_assert(L"中文"[0] == 0x4E2D && L"中文"[1] == 0x6587, "Source must be compiled as UTF-8");
 std::wstring utf8(const std::string& text) {
     if (text.empty()) return {};
@@ -119,9 +193,7 @@ struct Application {
     void openHelp(){
         openMenu(Page::Help);helpScroll=0;
         try{
-            wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);
-            auto root=std::filesystem::path(executable).parent_path();if(root.filename()==L"build")root=root.parent_path();
-            std::ifstream file(root/L"新手教程.md",std::ios::binary);if(!file)throw std::runtime_error("missing tutorial");
+            std::ifstream file(resourceFolder()/L"新手教程.md",std::ios::binary);if(!file)throw std::runtime_error("missing tutorial");
             std::string text((std::istreambuf_iterator<char>(file)),{});helpText=utf8(text);
         }catch(const std::exception&){helpText=L"无法读取新手教程.md。请将教程文件与程序放在一起（开发版本放在项目目录）。";}
         helpBlocks.clear();std::wistringstream lines(helpText);std::wstring line;bool code=false;
@@ -237,12 +309,9 @@ struct Application {
     }
     por2::Game newGame(int id) const {const auto level=levelById(id);return level.editorJson.empty()?por2::Game(id):por2::Game(level);}
     void loadMaps(){
-        wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);
-        const auto folder=std::filesystem::path(executable).parent_path();
-        // Development builds share the project's levels folder; packaged builds use one beside the executable.
-        const auto directory=folder.filename()==L"build"?folder.parent_path()/L"levels":folder/L"levels";
+        const auto directory=resourceFolder()/L"levels";
         try{
-            std::filesystem::create_directories(directory);
+            if(!std::filesystem::exists(directory))return;
             std::vector<std::filesystem::path> paths;
             for(const auto& entry:std::filesystem::directory_iterator(directory)){
                 auto extension=entry.path().extension().wstring();std::transform(extension.begin(),extension.end(),extension.begin(),::towlower);
@@ -277,7 +346,7 @@ struct Application {
             std::ofstream output(path);output<<recorder.text();output.close();
             if(!output)throw std::runtime_error("Cannot write recording");
             lastRecordingPath=path;
-            recorder.pending=false;recordingMessage=L"录制已保存：recordings/"+path.filename().wstring();
+            recorder.pending=false;recordingMessage=L"录制已保存；按 F6 打开录制文件夹。";
             return true;
         }catch(const std::exception&){
             recordingMessage=L"录制保存失败，数据仍保留；按 F10 重试。";
@@ -317,6 +386,9 @@ struct Application {
         dialog.hwndOwner=window; dialog.lpstrFile=path; dialog.nMaxFile=32768;
         dialog.lpstrFilter=L"操作脚本 (*.txt)\0*.txt\0所有文件\0*.*\0";
         dialog.lpstrTitle=L"导入回放（无 level 指令时使用当前选中关卡）";
+        const auto recordings=bindingsPath.parent_path()/L"recordings";
+        const auto initialFolder=std::filesystem::is_directory(recordings)?recordings:bindingsPath.parent_path();
+        dialog.lpstrInitialDir=initialFolder.c_str();
         dialog.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
         if (GetOpenFileNameW(&dialog)) {
             try { startReplay(por2::ReplayScript::load(std::filesystem::path(path))); }
@@ -385,9 +457,7 @@ struct Application {
     std::wstring settingsMessage=L"选择操作后按新键；Esc 取消改键。重复键位会提示冲突。";
     std::filesystem::path bindingsPath;
     void loadBindings(const std::filesystem::path& path={}) {
-        wchar_t executable[32768]{};
-        GetModuleFileNameW(nullptr,executable,32768);
-        bindingsPath=path.empty()?std::filesystem::path(executable).parent_path()/L"keybindings.ini":path;
+        bindingsPath=path.empty()?userDataFolder()/L"keybindings.ini":path;
         std::ifstream file(bindingsPath);
         auto candidate=DefaultBindings;
         for(int i=0;i<8;++i) {
@@ -401,12 +471,16 @@ struct Application {
     }
     void saveBindings() {
         if(smoke)return;
-        std::ofstream file(bindingsPath);
+        const auto temporary=std::filesystem::path(bindingsPath.wstring()+L"."+std::to_wstring(GetCurrentProcessId())+L".tmp");
+        std::ofstream file(temporary);
         for(auto key:bindings)file<<key<<'\n';
         file<<"speedTenths "<<speedTenths<<'\n';
         file<<"crownUnlocked "<<renderer.crownUnlocked<<'\n'<<"crownVisible "<<renderer.crownVisible<<'\n';
         file.close();
-        if(!file)settingsMessage=L"键位已生效，但无法写入 keybindings.ini；请检查游戏目录写入权限。";
+        if(!file || !MoveFileExW(temporary.c_str(),bindingsPath.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
+            settingsMessage=L"设置已生效，但保存失败；请检查数据目录的写入权限与剩余空间。";
+            std::error_code error;std::filesystem::remove(temporary,error);
+        }
     }
     void assignBinding(unsigned key) {
         if(rebinding<0)return;
@@ -1017,6 +1091,18 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     }
     if (!app) return DefWindowProcW(window, message, wparam, lparam);
     switch (message) {
+    case WM_DPICHANGED: {
+        MONITORINFO monitor{sizeof(MONITORINFO),{},{},0};
+        if(GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor)) {
+            const RECT bounds=app->fullscreen?monitor.rcMonitor:
+                fitToWorkArea(*reinterpret_cast<const RECT*>(lparam),monitor.rcWork);
+            SetWindowPos(window,nullptr,bounds.left,bounds.top,bounds.right-bounds.left,
+                         bounds.bottom-bounds.top,SWP_NOZORDER|SWP_NOACTIVATE);
+        }
+        app->menuPointer.reset();InvalidateRect(window,nullptr,FALSE);return 0;
+    }
+    case WM_SIZE:
+        app->menuPointer.reset();InvalidateRect(window,nullptr,FALSE);return 0;
     case WM_TIMER:
         try { app->update(window); }
         catch (const std::exception& error) {
@@ -1314,7 +1400,8 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
 }
 
 int runWindow(int level, bool smoke, const std::string& screenshot, bool direct, bool fullscreen, const std::optional<por2::ReplayScript>& script) {
-    SetProcessDPIAware();
+    enableDpiAwareness();
+    if(smoke)checkDataFolders();
     Application app(level);
     app.smoke = smoke;
     if(!smoke){app.loadBindings();app.loadMaps();}
@@ -1331,12 +1418,38 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
     type.lpszClassName = L"Por2ReconstructedWindow";
     type.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     if (!RegisterClassW(&type)) throw std::runtime_error("window registration failed");
-    const DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    const DWORD style = WS_OVERLAPPEDWINDOW;
     RECT bounds{0, 0, por2::WindowWidth, por2::WindowHeight};
     AdjustWindowRect(&bounds, style, FALSE);
     HWND window = CreateWindowExW(0, type.lpszClassName, L"Por2D", style, CW_USEDEFAULT, CW_USEDEFAULT,
         bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr, instance, &app);
     if (!window) throw std::runtime_error("window creation failed");
+    if(smoke) {
+        RECT resized{0,0,800,480};
+        SendMessageW(window,WM_DPICHANGED,MAKELONG(144,144),reinterpret_cast<LPARAM>(&resized));
+        RECT client{};GetClientRect(window,&client);
+        const auto center=logicalPoint(window,client.right/2,client.bottom/2);
+        if(!center || std::abs(center->x-500)>2 || std::abs(center->y-300)>2 ||
+           logicalPoint(window,-1,-1) || client.right>=1000)
+            throw std::runtime_error("DPI resize/input mapping failed");
+        RECT original{0,0,1000,600};AdjustWindowRect(&original,style,FALSE);
+        SetWindowPos(window,nullptr,0,0,original.right-original.left,original.bottom-original.top,
+                     SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+    }
+    if(!smoke) {
+        MONITORINFO monitor{sizeof(MONITORINFO),{},{},0};
+        RECT bounds{};GetWindowRect(window,&bounds);
+        if(GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor)) {
+            using GetDpi=UINT(WINAPI*)(HWND);
+            const auto getDpi=reinterpret_cast<GetDpi>(GetProcAddress(GetModuleHandleW(L"user32.dll"),"GetDpiForWindow"));
+            const UINT dpi=getDpi?getDpi(window):96;
+            bounds.right=bounds.left+MulDiv(bounds.right-bounds.left,dpi,96);
+            bounds.bottom=bounds.top+MulDiv(bounds.bottom-bounds.top,dpi,96);
+            bounds=fitToWorkArea(bounds,monitor.rcWork);
+            SetWindowPos(window,nullptr,bounds.left,bounds.top,bounds.right-bounds.left,
+                         bounds.bottom-bounds.top,SWP_NOZORDER|SWP_NOACTIVATE);
+        }
+    }
     if(!app.mapWarnings.empty())MessageBoxW(window,app.mapWarnings.c_str(),L"部分自定义地图未加载",MB_OK|MB_ICONWARNING);
     if(fullscreen) app.toggleFullscreen(window);
     ShowWindow(window, smoke ? SW_HIDE : SW_SHOW);
@@ -1352,7 +1465,7 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
     }
     if (status < 0) throw std::runtime_error("window message loop failed");
     if (!app.failure.empty()) throw std::runtime_error(app.failure);
-    if (smoke) std::cout << "PASS native window: Space title, gear menu, scrollable help, six live tutorial scenes/pause/skip, bindings/speed, recording/replay, maps and fullscreen\n";
+    if (smoke) std::cout << "PASS native window: user data migration/portable mode, DPI resize/input, Space title, gear menu, scrollable help, six live tutorial scenes/pause/skip, bindings/speed, recording/replay, maps and fullscreen\n";
     return static_cast<int>(message.wParam);
 }
 } // namespace
@@ -1392,7 +1505,13 @@ int main(int argc, char** argv) {
             if (script->level<0 && !script->customLevel && !direct) throw std::invalid_argument("replay needs --level ID or a level/map directive");
             if (script->level>=0) level=script->level;
         }
-        if (!headless) return runWindow(level, windowSmoke, screenshot,direct,fullscreen,script);
+        if (!headless) {
+            try {return runWindow(level, windowSmoke, screenshot,direct,fullscreen,script);}
+            catch(const std::exception& error) {
+                if(!windowSmoke)MessageBoxW(nullptr,utf8(error.what()).c_str(),L"Por2D 启动或运行失败",MB_OK|MB_ICONERROR);
+                throw;
+            }
+        }
         por2::Game game(level);
         por2::Replay replay;
         if (script) {

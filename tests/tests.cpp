@@ -324,6 +324,20 @@ void mapsAndTransforms() {
 }
 
 void placementPreview() {
+    Tutorial lesson;
+    lesson.reset(3);
+    for (int direction = 0; direction < 4; ++direction) {
+        while (lesson.frame <= direction*120) lesson.update();
+        Renderer walls;
+        walls.draw(lesson.scene,false,false,std::nullopt,false,true);
+        for (int x = 12; x <= 36; ++x) for (int y = 7; y <= 21; ++y) {
+            const bool verticalEnd = (x == 12 || x == 36) && y > 7 && y < 21;
+            const bool horizontalEnd = (y == 7 || y == 21) && x > 12 && x < 36;
+            if (verticalEnd || horizontalEnd)
+                expect(walls.pixels()[(y*TileSize+10)*WindowWidth+x*TileSize+10] != 0xFFFFFF,
+                       "orientation lesson covers all placeable wall tiles, including placement ends");
+        }
+    }
     for(int direction=0;direction<4;++direction){
         auto level=makeLevel(0);level.spawn={{350,300},static_cast<Direction>(direction)};
         Game oriented(level);Renderer rendered;

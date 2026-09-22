@@ -103,24 +103,41 @@ void Renderer::draw(const Game& game, bool debug, bool grid, std::optional<Shot>
                       tile == Tile::PortalSurface ? 0xFFFFFF : 0x323232);
         }
     if (showWallDirections) {
+        std::array<Vec2,MapWidth*MapHeight> directions{};
+        std::array<int,MapWidth*MapHeight> distances;
+        distances.fill(2);
         for (int x = 0; x < MapWidth; ++x) for (int y = 0; y < MapHeight; ++y) {
             if (game.level().map.at(x,y) != Tile::PortalSurface) continue;
             const Vec2 center{x*TileSize+10,y*TileSize+10};
-            // Use actual firing rules, including visibility, placement space and locks.
-            const auto hit = castShot(game.level().map,game.traversal().aimOrigin,center);
-            if (!hit || hit->tile.x != x || hit->tile.y != y) continue;
-            for (int id = 0; id < 2; ++id) {
-                auto portals = game.portals();
-                std::vector<ShotTrace> traces;
-                if (!firePortal(game.level().map,game.player(),game.motion(),portals,Shot{id,center},traces)) continue;
-                const Vec2 forward = decode(portals[id]).tangent * -1;
+            // Mark every tile covered by a legal placement, including its end tiles.
+            // Existing portals and temporary locks do not change the wall's directions.
+            for (const Vec2 normal : {Vec2{-1,0},Vec2{1,0},Vec2{0,-1},Vec2{0,1}}) {
+            if (game.level().map.at(x+static_cast<int>(normal.x),y+static_cast<int>(normal.y)) != Tile::Empty) continue;
+            const Vec2 face = center + normal * (TileSize/2.0);
+            const RayHit hit{face,{x,y},normal,face-game.traversal().aimOrigin};
+            const auto portal = choosePortal(game.level().map,{},game.traversal().aimOrigin,
+                                             game.player().body.direction,hit);
+            if (!portal) continue;
+            for (int i = 0; i < 3; ++i) {
+                const int tileX = portal->tile.x + (portal->horizontal() ? i : 0);
+                const int tileY = portal->tile.y + (portal->horizontal() ? 0 : i);
+                const int index = tileY*MapWidth+tileX;
+                if (std::abs(i-1) >= distances[index]) continue;
+                distances[index] = std::abs(i-1);
+                directions[index] = decode(*portal).tangent * -1;
+            }
+            }
+        }
+        // Prefer each tile's own placement direction; only borrow one for end tiles.
+        for (int x = 0; x < MapWidth; ++x) for (int y = 0; y < MapHeight; ++y) {
+                if (distances[y*MapWidth+x] == 2) continue;
+                const Vec2 arrowCenter{x*TileSize+10,y*TileSize+10};
+                const Vec2 forward = directions[y*MapWidth+x];
                 const Vec2 side{-forward.y,forward.x};
-                const Vec2 tip = center + forward * 6;
-                line(center-forward*6,tip,0x909090,2);
+                const Vec2 tip = arrowCenter + forward * 6;
+                line(arrowCenter-forward*6,tip,0x909090,2);
                 line(tip,tip-forward*4+side*3,0x909090,2);
                 line(tip,tip-forward*4-side*3,0x909090,2);
-                break;
-            }
         }
     }
     for (int id = 0; id < 2; ++id) {
