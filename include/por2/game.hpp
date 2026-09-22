@@ -46,6 +46,7 @@ public:
     bool finished() const { return finished_; }
     bool crowned() const { return finished_ && !customLevel_ && level_.id == Campaign.back(); }
 private:
+    friend class Tutorial; // Stage initial actor orientations without changing gameplay controls.
     void load(int id);
     void advance();
     bool atExit() const;

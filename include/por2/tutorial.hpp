@@ -5,6 +5,7 @@ namespace por2 {
 // A separate live game: teaching never changes the player's level or recording.
 class Tutorial {
 public:
+    static constexpr int MappingPhaseFrames=300;
     int stage=0, frame=0, phase=0, heldFrames=0;
     Game scene;
     MovementInput movement;

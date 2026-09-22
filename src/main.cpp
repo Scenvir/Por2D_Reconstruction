@@ -99,8 +99,8 @@ struct Application {
     void togglePractice(){tutorialPractice=!tutorialPractice;tutorialPaused=false;clearInput();tutorial.aim.reset();if(!tutorialPractice)tutorial.reset(tutorial.stage);}
     void finishTutorial(){tutorialActive=tutorialPending=false;clearInput();renderer.draw(game,debug,grid);}
     void tutorialStep(int delta){
-        if(tutorial.stage+delta>=5){finishTutorial();return;}
-        tutorialPractice=false;tutorial.reset(std::clamp(tutorial.stage+delta,0,4));clearInput();
+        if(tutorial.stage+delta>=6){finishTutorial();return;}
+        tutorialPractice=false;tutorial.reset(std::clamp(tutorial.stage+delta,0,5));clearInput();
         renderer.draw(tutorial.scene,true,true,tutorial.aim,false);
     }
     void drawGear(HDC dc) const {
@@ -163,15 +163,16 @@ struct Application {
     }
     void drawTutorial(HDC dc) const {
         const auto& t=tutorial;
-        const std::array<std::wstring,5> titles{L"键位与移动",L"哪些墙可以射门？",L"必须击中三格的中间格",L"头朝向决定门朝向",L"跨门时的锁定与换门"};
+        const std::array<std::wstring,6> titles{L"键位与移动",L"哪些墙可以射门？",L"必须击中三格的中间格",L"头朝向决定门朝向",L"门朝向与传送对应关系",L"跨门时的锁定与换门"};
         fill(dc,{0,0,1000,112},RGB(15,21,34));
-        label(dc,{30,10,910,48},L"新手教学  "+std::to_wstring(t.stage+1)+L" / 5 · "+titles[t.stage],27,RGB(240,245,255));
+        label(dc,{30,10,910,48},L"新手教学  "+std::to_wstring(t.stage+1)+L" / 6 · "+titles[t.stage],27,RGB(240,245,255));
         std::wstring detail;
         if(t.stage==0)detail=L"身体按屏幕方向移动。点击下方“键位设置”可改键；返回菜单后继续教学。";
         if(t.stage==1)detail=t.phase==0?L"白色墙：连续三格可放门，绿色射线与箭头表示当前可以放置。":L"深灰墙：不能放门。红色射线和叉号表示放置失败。";
         if(t.stage==2)detail=t.phase==1?L"命中第 2 格：它是连续三格的中间，能够放门。":L"命中边上的格子：不会自动吸附到中间，三格墙段容不下新门，放置失败。";
         if(t.stage==3)detail=L"红点是角色头部；同一面墙、同一目标，改变头朝向会改变门的渐变和箭头方向。";
-        if(t.stage==4)detail=t.phase==0?L"身体较大的一侧锁定（金框）。尝试移动这扇门会失败，原门保持不变。":t.phase==1?L"身体较小的一侧可以换门：射击后，另一端露出的身体也移动到新的门口。":L"继续穿过门，观察金框随本体侧变化；完全离开后解除锁定。";
+        if(t.stage==4)detail=t.phase==2?L"蓝门与橙门朝向相反，仍然亮对亮、暗对暗。角色从蓝门进入、橙门出来后，头朝下了。":L"传送始终亮对亮、暗对暗；观察两端标记和跨门的身体。红点标出角色头部。";
+        if(t.stage==5)detail=t.phase==0?L"身体较大的一侧锁定（金框）。尝试移动这扇门会失败，原门保持不变。":t.phase==1?L"身体较小的一侧可以换门：射击后，另一端露出的身体也移动到新的门口。":L"继续穿过门，观察金框随本体侧变化；完全离开后解除锁定。";
         paragraph(dc,{40,58,900,106},detail,18,RGB(176,201,227));
         if(t.stage==0){
             const std::array<bool,3> pressed{t.movement.left,t.movement.right,t.movement.jump};
@@ -183,6 +184,23 @@ struct Application {
         }
         if(t.stage==3)label(dc,{360,220,690,255},L"当前头朝"+std::array<std::wstring,4>{L"上",L"右",L"下",L"左"}[t.phase],23,RGB(255,215,100));
         if(t.stage==4){
+            label(dc,{260,220,740,255},t.phase==0?L"同向门：头朝上":t.phase==1?L"同向门：头朝下":L"反向蓝门 → 橙门：角色倒过来了",23,RGB(255,215,100));
+            const auto& portals=t.scene.portals();
+            if(portals[0].active()&&portals[1].active())for(int end=0;end<2;++end){
+                const auto a=por2::decode(portals[0]);
+                const auto source=a.anchor+a.tangent*(end==0?8:52);
+                const auto target=por2::transformPoint(source,portals[0],portals[1]);
+                const auto color=end==0?RGB(145,165,195):RGB(255,239,170);
+                for(int i=0;i<2;++i){
+                    const auto p=i==0?source:target;
+                    const LONG x=static_cast<LONG>(p.x)+(i==0?-70:15),y=static_cast<LONG>(p.y);
+                    label(dc,{x,y-13,x+55,y+13},end==0?L"暗端":L"亮端",18,color);
+                }
+                const auto p=source+(target-source)*((t.frame%120)/119.0);
+                fill(dc,{static_cast<LONG>(p.x)-4,static_cast<LONG>(p.y)-4,static_cast<LONG>(p.x)+5,static_cast<LONG>(p.y)+5},color);
+            }
+        }
+        if(t.stage==5){
             const auto& view=t.scene.traversal();const double total=view.bodyAreas[0]+view.bodyAreas[1];
             for(int i=0;i<2;++i){
                 const RECT area=i==0?RECT{10,250,230,310}:RECT{765,310,995,370};
@@ -201,13 +219,14 @@ struct Application {
         fill(dc,LessonPractice,buttonColor(LessonPractice));
         label(dc,LessonPractice,tutorialPractice?L"返回自动演示":L"亲自试试",19,RGB(240,245,255));
         std::wstring outcome=t.stage==0?L"射门："+keyName(bindings[6])+L" / "+keyName(bindings[7])+L" · 交互："+keyName(bindings[3])+L" · 重开："+keyName(bindings[4]):t.attempted?(t.accepted?L"实际射击结果：放置成功":L"实际射击结果：放置失败，原门保留"):L"观察预览，随后自动尝试射击";
+        if(t.stage==4)outcome=L"亮对亮，暗对暗 · 移动标记表示对应位置，身体按真实传送规则映射";
         if(tutorialPractice)outcome=L"自由练习：使用当前键位"+std::wstring(t.attempted?(t.accepted?L" · 射门成功":L" · 射门失败，原门保留"):L" · 移动、跳跃、射门或重开");
         label(dc,{30,458,970,493},outcome,21,RGB(255,215,100));
         label(dc,{30,498,970,527},tutorialPractice?L"点击下方按钮暂停或换段 · 返回自动演示会重置本段 · 不影响正式关卡":L"实时演示循环播放 · 空格 / → 下一段 · ← 上一段 · 教学不会改变关卡进度",16,RGB(150,173,201));
         for(const auto r:{LessonPrevious,LessonSettings,LessonPause,LessonSkip,LessonNext})fill(dc,r,buttonColor(r));
         label(dc,LessonPause,tutorialPaused?L"继续 (P)":L"暂停 (P)",19,RGB(240,245,255));
         label(dc,LessonPrevious,L"上一段",19,RGB(240,245,255));label(dc,LessonSettings,L"键位设置",19,RGB(240,245,255));
-        label(dc,LessonSkip,L"跳过教学",19,RGB(240,245,255));label(dc,LessonNext,t.stage==4?L"开始 Level 0":L"下一段",19,RGB(240,245,255));
+        label(dc,LessonSkip,L"跳过教学",19,RGB(240,245,255));label(dc,LessonNext,t.stage==5?L"开始 Level 0":L"下一段",19,RGB(240,245,255));
     }
     std::vector<por2::Level> customLevels;
     std::wstring mapWarnings;
@@ -251,7 +270,9 @@ struct Application {
         try {
             const auto directory=bindingsPath.parent_path()/L"recordings";
             std::filesystem::create_directories(directory);
-            const auto path=directory/(L"level-"+std::to_wstring(recorder.script.level)+L"-"+std::to_wstring(GetTickCount64())+L".txt");
+            const auto entry=std::find(por2::Campaign.begin(),por2::Campaign.end(),recorder.script.level);
+            const auto name=recorder.script.customLevel?L"custom":entry!=por2::Campaign.end()?L"level-"+std::to_wstring(entry-por2::Campaign.begin()):L"experimental-"+std::to_wstring(recorder.script.level);
+            const auto path=directory/(name+L"-"+std::to_wstring(GetTickCount64())+L".txt");
             std::ofstream output(path);output<<recorder.text();output.close();
             if(!output)throw std::runtime_error("Cannot write recording");
             lastRecordingPath=path;
@@ -527,9 +548,9 @@ struct Application {
         const int first=(selected/15)*15;
         for(int i=first;i<std::min(first+15,static_cast<int>(levels.size()));++i)
             if(contains(card(i-first),point)) { selected=i; startSelected(); return; }
-        if(contains({60,480,240,526},point)) selected=selected>=15?selected-15:static_cast<int>(levels.size())-1;
-        else if(contains({260,480,440,526},point)) selected=(first+15)%levels.size();
-        else if(contains({460,480,640,526},point)) openMenu();
+        if(contains({210,480,390,526},point)) selected=selected>=15?selected-15:static_cast<int>(levels.size())-1;
+        else if(contains({410,480,590,526},point)) selected=(first+15)%levels.size();
+        else if(contains({610,480,790,526},point)) openMenu();
     }
     void drawMenu(HDC dc) const {
         if(page==Page::Help){drawHelp(dc);return;}
@@ -572,11 +593,11 @@ struct Application {
             const std::wstring caption=(level.editorJson.empty()?prefix:L"自定义  ")+utf8(level.name);
             label(dc,r,caption,20,levelTextColor(i));
         }
-        for(const RECT r : {RECT{60,480,240,526},RECT{260,480,440,526},RECT{460,480,640,526}})
+        for(const RECT r : {RECT{210,480,390,526},RECT{410,480,590,526},RECT{610,480,790,526}})
             fill(dc,r,buttonColor(r));
-        label(dc,{60,480,240,526},L"上一页",20,RGB(130,194,255));
-        label(dc,{260,480,440,526},L"下一页",20,RGB(130,194,255));
-        label(dc,{460,480,640,526},L"返回菜单 (Esc)",20,RGB(210,221,238));
+        label(dc,{210,480,390,526},L"上一页",20,RGB(130,194,255));
+        label(dc,{410,480,590,526},L"下一页",20,RGB(130,194,255));
+        label(dc,{610,480,790,526},L"返回菜单 (Esc)",20,RGB(210,221,238));
         label(dc,{60,540,940,580},L"第 "+std::to_wstring(selected/15+1)+L" / "+std::to_wstring((levels.size()+14)/15)+L" 页  ·  战役 / levels 自定义地图",17,RGB(139,157,183));
     }
 
@@ -623,11 +644,15 @@ struct Application {
                 stepLevelIntro();
                 if (levelIntroActive()) throw std::runtime_error("level intro did not finish automatically");
                 if(!tutorialActive)throw std::runtime_error("level 0 did not start live tutorial");
-                for(int stage=0;stage<5;++stage){
+                for(int stage=0;stage<6;++stage){
                     tutorial.reset(stage);smoke=false;
-                    for(int i=0;i<(stage==4?170:80);++i)update(window);
+                    for(int i=0;i<(stage>=4?170:80);++i)update(window);
                     smoke=true;
                     if(game.player().body.position!=introPosition||!shots.empty()||recorder.active)throw std::runtime_error("tutorial changed live game");
+                    if(stage==4){
+                        smoke=false;while(tutorial.frame<3*por2::Tutorial::MappingPhaseFrames-10)update(window);smoke=true;
+                        if(tutorial.phase!=2||tutorial.scene.player().body.direction!=por2::Direction::Down)throw std::runtime_error("reversed portal lesson did not invert the actor");
+                    }
                     SendMessageW(window,WM_PAINT,0,0);
                     if(stage==0){
                         tutorial.reset(0);
@@ -1223,8 +1248,10 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             DrawTextW(dc, completed.c_str(), -1, &area, DT_CENTER | DT_SINGLELINE);
         }
         if(!app->menu && !app->intro && !app->levelIntroActive() && !app->tutorialActive && !app->hideReplayUi()) {
-            const auto entry=std::find(app->levels.begin(),app->levels.end(),app->game.level().id);
-            const std::string caption = (app->game.level().editorJson.empty()?"Level" + std::to_string(entry-app->levels.begin()):"自定义") + "  " + app->game.level().name;
+            const auto level=app->replay.active?(app->replay.script.customLevel?*app->replay.script.customLevel:por2::makeLevel(app->replay.initialLevel)):app->game.level();
+            const auto entry=std::find(por2::Campaign.begin(),por2::Campaign.end(),level.id);
+            const std::string prefix=!level.editorJson.empty()?"自定义":entry!=por2::Campaign.end()?"Level"+std::to_string(entry-por2::Campaign.begin()):"实验地图";
+            const std::string caption = prefix + "  " + level.name;
             const std::wstring wide=utf8(caption);
             RECT levelArea{690, 548, 975, 588};
             SetBkMode(dc, TRANSPARENT);
@@ -1322,7 +1349,7 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
     }
     if (status < 0) throw std::runtime_error("window message loop failed");
     if (!app.failure.empty()) throw std::runtime_error(app.failure);
-    if (smoke) std::cout << "PASS native window: Space title, gear menu, scrollable help, five live tutorial scenes/pause/skip, bindings/speed, recording/replay, maps and fullscreen\n";
+    if (smoke) std::cout << "PASS native window: Space title, gear menu, scrollable help, six live tutorial scenes/pause/skip, bindings/speed, recording/replay, maps and fullscreen\n";
     return static_cast<int>(message.wParam);
 }
 } // namespace

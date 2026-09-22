@@ -3,9 +3,6 @@ name: Windows playable release
 on:
   push:
     branches: [main]
-    paths:
-      - .github/workflows/windows-release.yml
-      - 游玩说明.txt
   workflow_dispatch:
 
 permissions:
@@ -21,8 +18,9 @@ jobs:
       - name: Configure and build
         shell: pwsh
         run: |
-          cmake -S . -B build -A x64 -DBUILD_TESTING=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           cmake --build build --config Release
+          ctest --test-dir build -C Release --output-on-failure
           .\build\Release\Por2D.exe --headless --level 0 --frames 2
 
       - name: Assemble the portable package
@@ -42,8 +40,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v1.0.0 .\Por2D-Basic-Windows-x64.zip .\SHA256SUMS.txt `
-            --title 'Por2D 基础版 v1.0.0' `
+          gh release create "v1.0.$env:GITHUB_RUN_NUMBER" .\Por2D-Basic-Windows-x64.zip .\SHA256SUMS.txt `
+            --title "Por2D 基础版 v1.0.$env:GITHUB_RUN_NUMBER" `
             --notes 'Windows 64 位免安装版。下载 ZIP 后完整解压，双击 Por2D.exe。压缩包包含新手教程、示例地图和离线地图编辑器。' `
             --latest `
             --target $env:GITHUB_SHA

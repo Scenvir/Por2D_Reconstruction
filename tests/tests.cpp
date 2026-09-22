@@ -94,7 +94,38 @@ void liveTutorial(){
             }}
         }
     }
-    tutorial.reset(4);bool locked=false,rejected=false,replaced=false,released=false;
+    tutorial.reset(4);
+    for(int phase=0;phase<3;++phase){
+        bool invertedProjection=false;
+        bool crossed=false;
+        for(int i=0;i<Tutorial::MappingPhaseFrames;++i){
+            const auto previous=tutorial.scene.player().body.position;
+            tutorial.update();
+            crossed|=tutorial.scene.traversal().projection.has_value();
+            if(tutorial.scene.traversal().projection)expect(tutorial.movement.left&&tutorial.scene.player().body.position!=previous,"mapping traversal advances continuously without a mid-portal pause");
+            const auto& portals=tutorial.scene.portals();
+            expect(portals[0].active()&&portals[1].active(),"mapping lesson has two real portals");
+            if(phase==2){
+                expect(dot(decode(portals[0]).tangent,decode(portals[1]).tangent)<0,"reversed blue portal faces opposite the orange portal");
+                const auto& projection=tutorial.scene.traversal().projection;
+                invertedProjection|=projection&&projection->direction==Direction::Down&&tutorial.scene.player().body.direction==Direction::Up;
+            }
+            for(double distance:{8.0,52.0}){
+                const auto a=decode(portals[0]),b=decode(portals[1]);
+                const auto point=a.anchor+a.tangent*distance;
+                expect(std::abs(dot(transformPoint(point,portals[0],portals[1])-b.anchor,b.tangent)-distance)<Epsilon,"light and dark ends retain corresponding positions");
+            }
+        }
+        expect(crossed,"each mapping example crosses both portal mouths");
+        expect(tutorial.scene.player().body.position.x>500&&tutorial.scene.traversal().lockedPortal<0&&!tutorial.scene.traversal().projection,"each mapping example fully emerges from the orange portal");
+        expect(tutorial.scene.player().body.direction==(phase==0?Direction::Up:Direction::Down),"each mapping example ends in the expected orientation");
+        if(phase==2){
+            expect(invertedProjection,"reversed portal demonstrates an upside-down projected body");
+            expect(tutorial.scene.player().body.direction==Direction::Down&&tutorial.scene.player().body.position.x>500,"actor emerges from orange portal upside down: x="+std::to_string(tutorial.scene.player().body.position.x)+" direction="+std::to_string(static_cast<int>(tutorial.scene.player().body.direction)));
+            expect(tutorial.scene.traversal().lockedPortal<0,"inverted actor fully exits the orange portal");
+        }
+    }
+    tutorial.reset(5);bool locked=false,rejected=false,replaced=false,released=false;
     for(int i=0;i<470;++i){
         tutorial.update();
         locked|=tutorial.scene.traversal().lockedPortal>=0;
@@ -136,6 +167,10 @@ void editorMaps(){
 }
 
 void recordingRoundTrip() {
+    Recorder numbered;numbered.start(16);numbered.capture({});
+    expect(numbered.text().find("version 2\nlevel 14\n")!=std::string::npos,"recordings write the menu ID");
+    std::istringstream numberedText(numbered.text());
+    expect(ReplayScript::parse(numberedText).level==16,"menu-number recording restores the original map");
     Recorder recorder;recorder.start(0);
     Game actual(0);
     std::vector<Player> states;
@@ -163,6 +198,16 @@ void recordingRoundTrip() {
 }
 
 void scriptReplay() {
+    for(int index=0;index<static_cast<int>(Campaign.size());++index){
+        std::istringstream modern("version 2\nlevel "+std::to_string(index)+"\nz 1\n");
+        expect(ReplayScript::parse(modern).level==Campaign[index],"version 2 uses menu level numbers");
+        std::istringstream legacy("level "+std::to_string(Campaign[index])+"\nz 1\n");
+        expect(ReplayScript::parse(legacy).level==Campaign[index],"legacy replays retain source IDs");
+    }
+    for(const auto* input:{"version 2\nlevel 15\nz 1","version 3\nz 1","level 0\nversion 2\nz 1","version 2\nversion 2\nz 1"}){
+        bool rejected=false;try{std::istringstream stream(input);ReplayScript::parse(stream);}catch(const std::exception&){rejected=true;}
+        expect(rejected,"invalid version or menu level rejected");
+    }
     std::istringstream text("\xEF\xBB\xBF# comment\nlevel 0\nd 2\nz 1\ns 0 260 389\ne 1\n");
     const auto script=ReplayScript::parse(text);
     expect(script.level==0 && script.totalFrames==5 && script.actions.size()==4,"script BOM, comments and frame count");
