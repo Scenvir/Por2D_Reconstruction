@@ -1268,6 +1268,15 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     }
     if (!app) return DefWindowProcW(window, message, wparam, lparam);
     switch (message) {
+    case WM_GETMINMAXINFO:
+        // Hidden CI desktops can be smaller than the off-screen sizes exercised by
+        // the native-resolution rendering smoke test. Do not let the work area cap it.
+        if(app->smoke){
+            auto* limits=reinterpret_cast<MINMAXINFO*>(lparam);
+            limits->ptMaxTrackSize={4096,4096};
+            return 0;
+        }
+        return DefWindowProcW(window,message,wparam,lparam);
     case WM_DPICHANGED: {
         MONITORINFO monitor{sizeof(MONITORINFO),{},{},0};
         if(GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor)) {

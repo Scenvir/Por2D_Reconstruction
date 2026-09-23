@@ -13,14 +13,17 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out the basic edition
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure and build
         shell: pwsh
         run: |
           cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          if ($LASTEXITCODE -ne 0) { throw 'Configure failed.' }
           cmake --build build --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
           ctest --test-dir build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }
           .\build\Release\Por2D.exe --headless --level 0 --frames 2
           if ($LASTEXITCODE -ne 0) { throw 'Headless check failed.' }
           .\build\Release\Por2D.exe --window-smoke-test --screenshot .\build\Release\window-smoke.bmp
