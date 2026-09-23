@@ -1,9 +1,9 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#include "por2/editor_host.hpp"
 #include <windows.h>
 #include <windowsx.h>
 #include <commdlg.h>
-#include <shlobj.h>
 #include "por2/replay.hpp"
 #include "por2/render.hpp"
 #include "por2/tutorial.hpp"
@@ -14,6 +14,7 @@
 #include <cwctype>
 #include <cwchar>
 #include <random>
+#include <shellapi.h>
 
 namespace {
 std::filesystem::path executableFolder() {
@@ -28,26 +29,9 @@ std::filesystem::path resourceFolder() {
     if(folder.parent_path().filename()==L"build")folder=folder.parent_path();
     return folder.filename()==L"build"?folder.parent_path():folder;
 }
-std::filesystem::path prepareDataFolder(const std::filesystem::path& executable,
-                                      const std::filesystem::path& local, bool portable) {
-    const auto directory=portable?executable:local/L"Por2D-Basic";
-    std::filesystem::create_directories(directory);
-    // Keep the original intact and never replace settings from a previous migration.
-    if(!portable && !std::filesystem::exists(directory/L"keybindings.ini") &&
-       std::filesystem::is_regular_file(executable/L"keybindings.ini"))
-        std::filesystem::copy_file(executable/L"keybindings.ini",directory/L"keybindings.ini");
-    return directory;
-}
 std::filesystem::path userDataFolder() {
-    const auto executable=executableFolder();
-    if(std::filesystem::is_regular_file(executable/L"portable.txt"))
-        return prepareDataFolder(executable,{},true);
-    PWSTR local=nullptr;
-    if(FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&local)))
-        throw std::runtime_error("Cannot locate Windows user data folder");
-    const std::filesystem::path directory(local);
-    CoTaskMemFree(local);
-    return prepareDataFolder(executable,directory,false);
+    // A source build and a released package both keep data beside their resources.
+    return resourceFolder();
 }
 void enableDpiAwareness() {
     using SetAwareness=BOOL(WINAPI*)(HANDLE);
@@ -63,28 +47,48 @@ RECT fitToWorkArea(RECT bounds, const RECT& work) {
     bounds.right=bounds.left+width;bounds.bottom=bounds.top+height;
     return bounds;
 }
+struct DesktopWindowState {
+    RECT bounds{}; // Screen coordinates, never WINDOWPLACEMENT workspace coordinates.
+    bool maximized=false;
+};
+std::optional<DesktopWindowState> readWindowState(const std::filesystem::path& path) {
+    std::ifstream file(path);
+    DesktopWindowState state;int version=0,maximized=0;
+    auto& r=state.bounds;
+    if(!(file>>version>>r.left>>r.top>>r.right>>r.bottom>>maximized) || version!=1 ||
+       (maximized!=0&&maximized!=1))return {};
+    for(const LONG coordinate:{r.left,r.top,r.right,r.bottom})
+        if(coordinate < -1000000 || coordinate > 1000000)return {};
+    if(r.right-r.left<320 || r.bottom-r.top<240 || r.right-r.left>32768 || r.bottom-r.top>32768)return {};
+    state.maximized=maximized!=0;
+    return state;
+}
+bool writeWindowState(const std::filesystem::path& path,const DesktopWindowState& state) {
+    const auto temporary=std::filesystem::path(path.wstring()+L"."+std::to_wstring(GetCurrentProcessId())+L".tmp");
+    std::ofstream file(temporary);
+    const auto& r=state.bounds;
+    file<<1<<' '<<r.left<<' '<<r.top<<' '<<r.right<<' '<<r.bottom<<' '<<state.maximized<<'\n';
+    file.close();
+    if(file && MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return true;
+    std::error_code error;std::filesystem::remove(temporary,error);return false;
+}
 void checkDataFolders() {
     const auto root=std::filesystem::temp_directory_path()/
         (L"por2-data-test-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
-    const auto executable=root/L"游戏目录", local=root/L"用户目录";
-    const auto target=local/L"Por2D-Basic";
+    const auto target=root/L"游戏目录";
     struct Cleanup {
         std::vector<std::filesystem::path> paths;
         ~Cleanup(){for(const auto& path:paths){std::error_code error;std::filesystem::remove(path,error);}}
-    } cleanup{{target/L"keybindings.ini",executable/L"keybindings.ini",target,local,executable,root}};
-    std::filesystem::create_directories(executable);
-    {std::ofstream file(executable/L"keybindings.ini");file<<"legacy";}
-    if(prepareDataFolder(executable,local,false)!=target)throw std::runtime_error("wrong user data folder");
-    std::string value;
-    {std::ifstream file(target/L"keybindings.ini");file>>value;}
-    if(value!="legacy")throw std::runtime_error("legacy settings migration failed");
-    {std::ofstream file(target/L"keybindings.ini");file<<"current";}
-    prepareDataFolder(executable,local,false);
-    {std::ifstream file(target/L"keybindings.ini");file>>value;}
-    if(value!="current")throw std::runtime_error("migration overwrote current settings");
-    if(prepareDataFolder(executable,local,true)!=executable)throw std::runtime_error("portable data folder failed");
-    {std::ifstream file(executable/L"keybindings.ini");file>>value;}
-    if(value!="legacy")throw std::runtime_error("migration modified original settings");
+    } cleanup{{target/L"window.ini",target,root}};
+    std::filesystem::create_directories(target);
+    if(userDataFolder()!=resourceFolder())throw std::runtime_error("data must stay in game folder");
+    const DesktopWindowState remembered{{-1200,80,-300,680},true};
+    if(!writeWindowState(target/L"window.ini",remembered))throw std::runtime_error("window state write failed");
+    const auto loaded=readWindowState(target/L"window.ini");
+    if(!loaded||!loaded->maximized||!EqualRect(&loaded->bounds,&remembered.bounds))
+        throw std::runtime_error("window position/maximized persistence failed");
+    {std::ofstream file(target/L"window.ini");file<<"1 0 0 2147483647 600 0";}
+    if(readWindowState(target/L"window.ini"))throw std::runtime_error("invalid window state accepted");
     const RECT fit=fitToWorkArea({-200,-200,1800,1000},{0,0,800,560});
     if(fit.left!=0||fit.top!=0||fit.right!=800||fit.bottom!=560)
         throw std::runtime_error("small desktop window fitting failed");
@@ -121,6 +125,7 @@ constexpr RECT GearButton{936,10,986,62};
 constexpr RECT HelpButton{400,492,600,532};
 constexpr RECT ResetButton{190,492,390,532};
 constexpr RECT SettingsBack{610,492,810,532};
+constexpr RECT MapEditorButton{60,534,340,570}, MapFolderButton{360,534,660,570}, MapRefreshButton{680,534,940,570};
 constexpr RECT LessonPrevious{40,540,215,582}, LessonSettings{230,540,410,582}, LessonSkip{570,540,740,582}, LessonNext{755,540,960,582};
 constexpr RECT LessonPause{425,540,555,582};
 constexpr RECT LessonPractice{755,120,960,160}, CrownButton{350,536,650,568};
@@ -141,11 +146,12 @@ std::wstring keyName(unsigned key) {
     if(GetKeyNameTextW(scan,text,64))return text;
     return L"Key "+std::to_wstring(key);
 }
-void label(HDC dc, RECT r, const std::wstring& text, int size, COLORREF color) {
+void label(HDC dc, RECT r, const std::wstring& text, int size, COLORREF color,
+           UINT format=DT_CENTER|DT_VCENTER|DT_SINGLELINE) {
     HFONT font = CreateFontW(-size,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
         OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei");
     auto old = SelectObject(dc,font); SetBkMode(dc,TRANSPARENT); SetTextColor(dc,color);
-    DrawTextW(dc,text.c_str(),-1,&r,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    DrawTextW(dc,text.c_str(),-1,&r,format|DT_NOPREFIX);
     SelectObject(dc,old); DeleteObject(font);
 }
 void fill(HDC dc, RECT r, COLORREF color) {
@@ -216,18 +222,25 @@ struct Application {
         }
     }
     void scrollHelp(int amount){helpScroll=std::clamp(helpScroll+amount,0,std::max(0,helpHeight-400));}
-    void drawHelp(HDC dc) const {
+    void drawHelp(HDC dc) {
         fill(dc,{0,0,1000,600},RGB(15,21,34));label(dc,{40,20,960,78},L"帮助 / 新手教程",32,RGB(240,245,255));
         const int saved=SaveDC(dc);IntersectClipRect(dc,45,100,935,500);
-        int offset=0;
+        std::vector<int> heights;helpHeight=0;
         for(const auto& block:helpBlocks){
+            const int height=paragraph(dc,{55,0,925,0},block.text,block.size,RGB(220,230,245),true,block.code?L"Consolas":L"Microsoft YaHei");
+            heights.push_back(height);helpHeight+=height+(block.code?0:7);
+        }
+        helpScroll=std::clamp(helpScroll,0,std::max(0,helpHeight-400));
+        int offset=0;
+        for(std::size_t index=0;index<helpBlocks.size();++index){
+            const auto& block=helpBlocks[index];
             const auto font=block.code?L"Consolas":L"Microsoft YaHei";
-            const int height=paragraph(dc,{55,0,925,0},block.text,block.size,RGB(220,230,245),true,font);
+            const int height=heights[index];
             const int y=100+offset-helpScroll;
             if(y+height>=100&&y<500)paragraph(dc,{55,y,925,y+height},block.text,block.size,block.size>19?RGB(130,194,255):RGB(220,230,245),false,font);
             offset+=height+(block.code?0:7);
         }
-        helpHeight=offset;RestoreDC(dc,saved);
+        RestoreDC(dc,saved);
         fill(dc,{950,100,958,500},RGB(45,58,76));
         const int thumb=std::max(20,400*400/std::max(400,helpHeight));
         const int y=100+(400-thumb)*helpScroll/std::max(1,helpHeight-400);fill(dc,{950,y,958,y+thumb},RGB(90,170,225));
@@ -302,25 +315,80 @@ struct Application {
         label(dc,LessonSkip,L"跳过教学",19,RGB(240,245,255));label(dc,LessonNext,t.stage==5?L"开始 Level 0":L"下一段",19,RGB(240,245,255));
     }
     std::vector<por2::Level> customLevels;
+    std::vector<std::filesystem::path> customPaths;
     std::wstring mapWarnings;
+    std::wstring mapMessage;
+    por2::EditorHost editorHost;
     por2::Level levelById(int id) const {
         for(const auto& level:customLevels)if(level.id==id)return level;
         return por2::makeLevel(id);
     }
     por2::Game newGame(int id) const {const auto level=levelById(id);return level.editorJson.empty()?por2::Game(id):por2::Game(level);}
-    void loadMaps(){
-        const auto directory=resourceFolder()/L"levels";
-        try{
-            if(!std::filesystem::exists(directory))return;
+    std::filesystem::path userMapsFolder() const {return bindingsPath.parent_path()/L"levels";}
+    void loadMaps(const std::filesystem::path& bundled={},const std::filesystem::path& user={}){
+        const int oldId=levels.empty()?0:levels[std::clamp(selected,0,static_cast<int>(levels.size())-1)];
+        const int oldCustom=selected-static_cast<int>(por2::Campaign.size());
+        const auto oldPath=oldCustom>=0&&oldCustom<static_cast<int>(customPaths.size())?customPaths[oldCustom]:std::filesystem::path{};
+        customLevels.clear();customPaths.clear();mapWarnings.clear();
+        levels.assign(por2::Campaign.begin(),por2::Campaign.end());
+        const auto package=bundled.empty()?resourceFolder()/L"levels":bundled;
+        const auto personal=user.empty()?userMapsFolder():user;
+        std::vector<std::filesystem::path> directories{package};
+        std::error_code error;
+        if(!std::filesystem::equivalent(package,personal,error))directories.push_back(personal);
+        for(const auto& directory:directories)try{
+            if(!std::filesystem::exists(directory))continue;
             std::vector<std::filesystem::path> paths;
             for(const auto& entry:std::filesystem::directory_iterator(directory)){
                 auto extension=entry.path().extension().wstring();std::transform(extension.begin(),extension.end(),extension.begin(),::towlower);
                 if(entry.is_regular_file()&&extension==L".json")paths.push_back(entry.path());
             }
             std::sort(paths.begin(),paths.end());
-            for(const auto& path:paths){try{const int id=1000+static_cast<int>(customLevels.size());customLevels.push_back(por2::loadEditorLevel(path,id));levels.push_back(id);}
-                catch(const std::exception& error){mapWarnings+=path.filename().wstring()+L": "+utf8(error.what())+L"\n";}}
-        }catch(const std::exception& error){mapWarnings+=utf8(error.what());}
+            for(const auto& path:paths){try{const int id=1000+static_cast<int>(customLevels.size());customLevels.push_back(por2::loadEditorLevel(path,id));customPaths.push_back(path);levels.push_back(id);}
+                catch(const std::exception& error){mapWarnings+=path.wstring()+L": "+utf8(error.what())+L"\n";}}
+        }catch(const std::exception& error){mapWarnings+=directory.wstring()+L": "+utf8(error.what())+L"\n";}
+        selected=std::clamp(selected,0,static_cast<int>(levels.size())-1);
+        if(!oldPath.empty()){
+            const auto found=std::find(customPaths.begin(),customPaths.end(),oldPath);
+            if(found!=customPaths.end())selected=static_cast<int>(por2::Campaign.size()+std::distance(customPaths.begin(),found));
+        }else{
+            const auto found=std::find(levels.begin(),levels.end(),oldId);
+            if(found!=levels.end())selected=static_cast<int>(std::distance(levels.begin(),found));
+        }
+        mapMessage=L"已加载 "+std::to_wstring(customLevels.size())+L" 张自定义地图"+(mapWarnings.empty()?L"":L"；部分文件未加载");
+    }
+    void refreshMaps(HWND window){
+        loadMaps();clearInput();
+        if(!mapWarnings.empty()&&!smoke)MessageBoxW(window,mapWarnings.c_str(),L"部分自定义地图未加载",MB_OK|MB_ICONWARNING);
+        InvalidateRect(window,nullptr,FALSE);
+    }
+    void openMapsFolder(HWND window){
+        try{
+            const auto folder=userMapsFolder();std::filesystem::create_directories(folder);
+            if(!smoke && reinterpret_cast<INT_PTR>(ShellExecuteW(window,L"open",folder.c_str(),nullptr,nullptr,SW_SHOWNORMAL))<=32)
+                throw std::runtime_error("Cannot open map folder");
+            mapMessage=L"将 JSON 放入地图文件夹，然后点击刷新列表 (F5)";
+        }catch(const std::exception&){mapMessage=L"无法打开地图文件夹，请检查目录权限。";}
+        InvalidateRect(window,nullptr,FALSE);
+    }
+    void openMapEditor(HWND window){
+        try{
+            const auto folder=resourceFolder()/L"editor";
+            const auto entry=folder/L"index.html";
+            if(!std::filesystem::is_regular_file(entry)||!std::filesystem::is_regular_file(folder/L"editor.js")||
+               !std::filesystem::is_regular_file(folder/L"model.js")){
+                mapMessage=L"地图编辑器文件缺失，请完整解压游戏压缩包。";
+            }else{
+                if(!smoke){
+                    const auto url=editorHost.start(resourceFolder());
+                    const std::wstring wideUrl(url.begin(),url.end());
+                    if(reinterpret_cast<INT_PTR>(ShellExecuteW(window,L"open",wideUrl.c_str(),nullptr,nullptr,SW_SHOWNORMAL))<=32)
+                        throw std::runtime_error("Cannot open editor browser");
+                }
+                mapMessage=L"编辑器已打开：直接保存到 levels，按 F5 刷新；请保持游戏运行。";
+            }
+        }catch(const std::exception&){mapMessage=L"无法读取地图编辑器，请检查游戏目录权限。";}
+        clearInput();InvalidateRect(window,nullptr,FALSE);
     }
     bool replaySingle=false, importing=false;
     bool replayUiHidden=false;
@@ -440,6 +508,8 @@ struct Application {
     std::vector<int> levels;
     int selected=0;
     bool menu=true, started=false, fullscreen=false;
+    bool background=false, changingWindowMode=false, windowStateReady=false;
+    DesktopWindowState windowState;
     enum class Page { Main, Levels, Settings, Help };
     Page page=Page::Main;
     int menuItem=0, settingItem=0, rebinding=-1;
@@ -497,6 +567,18 @@ struct Application {
         }
     }
     void resume() { if(started){menu=false;clearInput();} }
+    void pauseForFocus(HWND window) {
+        background=true;
+        if(replay.active)replay.paused=true;
+        clearInput();menuPointer.reset();
+        if(!importing && started && !intro && !menu)openMenu();
+        InvalidateRect(window,nullptr,FALSE);
+    }
+    void saveWindow() {
+        if(smoke||!windowStateReady||bindingsPath.empty())return;
+        if(!writeWindowState(bindingsPath.parent_path()/L"window.ini",windowState))
+            settingsMessage=L"窗口位置未能保存，请检查数据目录权限。";
+    }
     void back() {
         if(rebinding>=0){rebinding=-1;settingsMessage=L"已取消改键。";}
         else if(page==Page::Help)openMenu(Page::Settings);
@@ -507,7 +589,7 @@ struct Application {
         if(menuItem==0){if(started)resume();else openMenu(Page::Levels);}
         if(menuItem==1)openMenu(Page::Settings);
         if(menuItem==2)openMenu(Page::Levels);
-        if(menuItem==3&&stopRecording())DestroyWindow(window);
+        if(menuItem==3&&stopRecording()){saveWindow();DestroyWindow(window);}
         if(menuItem==4)toggleRecording();
         if(menuItem==5)importReplay(window);
     }
@@ -588,17 +670,19 @@ struct Application {
             savedStyle=GetWindowLongPtrW(window,GWL_STYLE);
             MONITORINFO monitor{}; monitor.cbSize=sizeof(monitor);
             if (!GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor)) return;
+            changingWindowMode=true;
             SetWindowLongPtrW(window,GWL_STYLE,savedStyle & ~WS_OVERLAPPEDWINDOW);
             SetWindowPos(window,nullptr,monitor.rcMonitor.left,monitor.rcMonitor.top,
                 monitor.rcMonitor.right-monitor.rcMonitor.left,monitor.rcMonitor.bottom-monitor.rcMonitor.top,
                 SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED);
         } else {
+            changingWindowMode=true;
             SetWindowLongPtrW(window,GWL_STYLE,savedStyle);
             if(smoke) placement.showCmd=SW_HIDE;
             SetWindowPlacement(window,&placement);
             SetWindowPos(window,nullptr,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED);
         }
-        fullscreen=!fullscreen; InvalidateRect(window,nullptr,FALSE);
+        fullscreen=!fullscreen;changingWindowMode=false;InvalidateRect(window,nullptr,FALSE);
     }
     void startSelected() {
         if(!stopRecording())return;
@@ -621,13 +705,16 @@ struct Application {
             return;
         }
         const int first=(selected/15)*15;
+        if(contains(MapEditorButton,point)){openMapEditor(window);return;}
+        if(contains(MapFolderButton,point)){openMapsFolder(window);return;}
+        if(contains(MapRefreshButton,point)){refreshMaps(window);return;}
         for(int i=first;i<std::min(first+15,static_cast<int>(levels.size()));++i)
             if(contains(card(i-first),point)) { selected=i; startSelected(); return; }
         if(contains({210,480,390,526},point)) selected=selected>=15?selected-15:static_cast<int>(levels.size())-1;
         else if(contains({410,480,590,526},point)) selected=(first+15)%levels.size();
         else if(contains({610,480,790,526},point)) openMenu();
     }
-    void drawMenu(HDC dc) const {
+    void drawMenu(HDC dc) {
         if(page==Page::Help){drawHelp(dc);return;}
         fill(dc,{0,0,1000,600},RGB(15,21,34));
         if(page==Page::Main){
@@ -664,20 +751,26 @@ struct Application {
             RECT r=card(i-first); fill(dc,r,buttonColor(r,i==selected));
             const auto level=levelById(levels[i]);
             const bool campaign=i<static_cast<int>(por2::Campaign.size());
-            const std::wstring prefix=campaign?L"Level "+std::to_wstring(i)+L"  ":L"自定义  ";
-            const std::wstring caption=(level.editorJson.empty()?prefix:L"自定义  ")+utf8(level.name);
-            label(dc,r,caption,20,levelTextColor(i));
+            const std::wstring prefix=campaign?L"Level "+std::to_wstring(i)+L"  ":
+                L"自定义  ";
+            label(dc,r,prefix+utf8(level.name),20,levelTextColor(i),DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
         }
         for(const RECT r : {RECT{210,480,390,526},RECT{410,480,590,526},RECT{610,480,790,526}})
             fill(dc,r,buttonColor(r));
         label(dc,{210,480,390,526},L"上一页",20,RGB(130,194,255));
         label(dc,{410,480,590,526},L"下一页",20,RGB(130,194,255));
         label(dc,{610,480,790,526},L"返回菜单 (Esc)",20,RGB(210,221,238));
-        label(dc,{60,540,940,580},L"第 "+std::to_wstring(selected/15+1)+L" / "+std::to_wstring((levels.size()+14)/15)+L" 页  ·  战役 / levels 自定义地图",17,RGB(139,157,183));
+        fill(dc,MapEditorButton,buttonColor(MapEditorButton));
+        label(dc,MapEditorButton,L"打开地图编辑器 (Ctrl+E)",18,RGB(210,221,238));
+        fill(dc,MapFolderButton,buttonColor(MapFolderButton));fill(dc,MapRefreshButton,buttonColor(MapRefreshButton));
+        label(dc,MapFolderButton,L"打开地图文件夹 (Ctrl+O)",18,RGB(210,221,238));
+        label(dc,MapRefreshButton,L"刷新列表 (F5)",18,RGB(210,221,238));
+        label(dc,{20,574,980,599},L"第 "+std::to_wstring(selected/15+1)+L" / "+std::to_wstring((levels.size()+14)/15)+L" 页 · "+mapMessage,14,RGB(139,157,183));
     }
 
     void update(HWND window) {
         if (importing) return;
+        if(background&&!smoke)return;
         if (intro && !smoke) {
             updateDemo();
             InvalidateRect(window,nullptr,FALSE);
@@ -812,6 +905,17 @@ struct Application {
                 SendMessageW(window, WM_KEYDOWN, 'A', 0);
                 SendMessageW(window, WM_KILLFOCUS, 0, 0);
                 if (keys['A']) throw std::runtime_error("window smoke: focus loss left a key pressed");
+                const auto position=game.player().body.position;
+                smoke=false;update(window);smoke=true;
+                if(!menu||!background||game.player().body.position!=position)
+                    throw std::runtime_error("focus loss did not pause gameplay");
+                SendMessageW(window,WM_SETFOCUS,0,0);
+                smoke=false;update(window);smoke=true;
+                if(!menu||background||game.player().body.position!=position)
+                    throw std::runtime_error("focus return resumed gameplay automatically");
+                resume();SendMessageW(window,WM_SIZE,SIZE_MINIMIZED,0);
+                if(!menu||!background)throw std::runtime_error("minimize did not pause gameplay");
+                SendMessageW(window,WM_SETFOCUS,0,0);
             }
             if (smokeTicks == 13) {
                 SendMessageW(window,WM_LBUTTONDOWN,0,MAKELPARAM(962,30));
@@ -896,6 +1000,7 @@ struct Application {
                 RECT before{}; GetWindowRect(window,&before);
                 openMenu(Page::Settings);
                 menuClick(window,{660,450});
+                if(!EqualRect(&before,&windowState.bounds))throw std::runtime_error("fullscreen overwrote remembered bounds");
                 const RECT r=viewport(window);
                 auto point=logicalPoint(window,(r.left+r.right)/2,(r.top+r.bottom)/2);
                 if(!fullscreen || !point || std::abs(point->x-500)>1 || std::abs(point->y-300)>1)
@@ -991,6 +1096,12 @@ struct Application {
                 const auto recordedPosition=game.player().body.position;
                 openMenu();smoke=false;update(window);smoke=true;
                 if(recorder.script.totalFrames!=6)throw std::runtime_error("menu was recorded as gameplay");
+                resume();SendMessageW(window,WM_KILLFOCUS,0,0);
+                smoke=false;update(window);smoke=true;
+                SendMessageW(window,WM_SETFOCUS,0,0);
+                smoke=false;update(window);smoke=true;
+                if(!menu||recorder.script.totalFrames!=6||!recorder.active)
+                    throw std::runtime_error("focus pause advanced or stopped recording");
                 bindingsPath=(screenshot.empty()?std::filesystem::temp_directory_path():std::filesystem::path(screenshot).parent_path())/
                     ("smoke-recording-"+std::to_string(GetCurrentProcessId()))/"keybindings.ini";
                 smoke=false;SendMessageW(window,WM_KEYDOWN,VK_F10,0);smoke=true;
@@ -1004,8 +1115,45 @@ struct Application {
                 selected=static_cast<int>(levels.size())-1;startSelected();
                 if(game.level().editorJson.empty()||game.level().id!=levels[selected])throw std::runtime_error("custom map selection did not start map");
                 endLevelIntro();openMenu(Page::Levels);SendMessageW(window,WM_PAINT,0,0);
+                const auto mapCount=customLevels.size();const auto activeMap=game.level().editorJson;
+                menuClick(window,{200,550});
+                if(mapMessage.find(L"编辑器已打开")==std::wstring::npos)throw std::runtime_error("map editor entry could not locate packaged assets");
+                menuClick(window,{510,550});
+                if(!std::filesystem::is_directory(userMapsFolder()))throw std::runtime_error("map folder button failed");
+                const auto imported=userMapsFolder()/L"窗口检查地图.json";
+                std::filesystem::copy_file(resourceFolder()/L"levels"/L"example.json",imported);
+                SendMessageW(window,WM_KEYDOWN,VK_F5,0);SendMessageW(window,WM_KEYUP,VK_F5,0);
+                if(customLevels.size()!=mapCount+1||game.level().editorJson!=activeMap)
+                    throw std::runtime_error("F5 did not discover user map or reset active game");
+                std::filesystem::remove(imported);menuClick(window,{810,550});
+                if(customLevels.size()!=mapCount)throw std::runtime_error("refresh button retained removed map");
                 if(menuButton(4).left!=menuRow(3).left||menuButton(5).right!=menuRow(3).right||menuButton(3).top<=menuButton(4).bottom)
                     throw std::runtime_error("record/replay menu layout failed");
+                const auto remembered=windowState;
+                SendMessageW(window,WM_SIZE,SIZE_MAXIMIZED,0);
+                SendMessageW(window,WM_SIZE,SIZE_MINIMIZED,0);
+                if(!windowState.maximized||!EqualRect(&remembered.bounds,&windowState.bounds))
+                    throw std::runtime_error("minimizing lost window state");
+                SendMessageW(window,WM_SIZE,SIZE_RESTORED,0);SendMessageW(window,WM_SETFOCUS,0,0);
+                const auto baseScreenshot=screenshot;
+                for(const int scale:{125,200}){
+                    RECT large{0,0,1000*scale/100,600*scale/100};
+                    AdjustWindowRect(&large,static_cast<DWORD>(GetWindowLongPtrW(window,GWL_STYLE)),FALSE);
+                    SetWindowPos(window,nullptr,0,0,large.right-large.left,large.bottom-large.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+                    RECT client{};GetClientRect(window,&client);
+                    if(client.right!=1000*scale/100||client.bottom!=600*scale/100)
+                        throw std::runtime_error("high resolution client size failed");
+                    if(!baseScreenshot.empty())screenshot=baseScreenshot+".scale"+std::to_string(scale);
+                    openMenu(Page::Settings);SendMessageW(window,WM_PAINT,0,0);
+                    openHelp();SendMessageW(window,WM_PAINT,0,0);
+                    SendMessageW(window,WM_KEYDOWN,VK_END,0);
+                    if(helpScroll!=std::max(0,helpHeight-400))throw std::runtime_error("scaled help scrolling failed");
+                    openMenu(Page::Levels);SendMessageW(window,WM_PAINT,0,0);
+                    const auto center=logicalPoint(window,client.right/2,client.bottom/2);
+                    if(!center||std::abs(center->x-500)>1||std::abs(center->y-300)>1)
+                        throw std::runtime_error("high resolution hit testing failed");
+                }
+                screenshot=baseScreenshot;
                 if (!paintCount) throw std::runtime_error("window smoke: paint callback was never called");
                 DestroyWindow(window);
                 return;
@@ -1083,6 +1231,35 @@ struct Application {
     }
 };
 
+void checkMapCatalog() {
+    const auto root=std::filesystem::temp_directory_path()/
+        (L"por2-maps-test-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
+    const auto bundled=root/L"附带地图",user=root/L"用户地图";
+    struct Cleanup {
+        std::vector<std::filesystem::path> paths;
+        ~Cleanup(){for(const auto& path:paths){std::error_code error;std::filesystem::remove(path,error);}}
+    } cleanup{{bundled/L"same.json",user/L"same.json",user/L"broken.json",user,bundled,root}};
+    std::filesystem::create_directories(bundled);std::filesystem::create_directories(user);
+    const auto example=resourceFolder()/L"levels"/L"example.json";
+    std::filesystem::copy_file(example,bundled/L"same.json");std::filesystem::copy_file(example,user/L"same.json");
+    {std::ofstream file(user/L"broken.json");file<<"invalid map";}
+    Application catalog(0);catalog.smoke=true;
+    catalog.loadMaps(bundled,user);
+    if(catalog.customLevels.size()!=2||catalog.mapWarnings.empty())throw std::runtime_error("two-source map loading/error isolation failed");
+    catalog.selected=static_cast<int>(catalog.levels.size())-1;
+    catalog.startSelected();const auto activeJson=catalog.game.level().editorJson;
+    const auto position=catalog.game.player().body.position;
+    catalog.loadMaps(bundled,user);
+    if(catalog.customLevels.size()!=2||catalog.customPaths[catalog.selected-por2::Campaign.size()]!=user/L"same.json")
+        throw std::runtime_error("map refresh duplicated maps or lost selection");
+    std::filesystem::remove(user/L"same.json");std::filesystem::remove(user/L"broken.json");
+    catalog.loadMaps(bundled,user);
+    if(catalog.customLevels.size()!=1||!catalog.mapWarnings.empty()||catalog.game.level().editorJson!=activeJson||catalog.game.player().body.position!=position)
+        throw std::runtime_error("refresh changed active map or retained removed files");
+    catalog.loadMaps(bundled,bundled);
+    if(catalog.customLevels.size()!=1)throw std::runtime_error("portable map directory was loaded twice");
+}
+
 LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     auto* app = reinterpret_cast<Application*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -1102,7 +1279,22 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         app->menuPointer.reset();InvalidateRect(window,nullptr,FALSE);return 0;
     }
     case WM_SIZE:
+        if(wparam==SIZE_MINIMIZED)app->pauseForFocus(window);
+        if(app->windowStateReady&&!app->fullscreen&&!app->changingWindowMode&&wparam!=SIZE_MINIMIZED)
+            app->windowState.maximized=wparam==SIZE_MAXIMIZED;
         app->menuPointer.reset();InvalidateRect(window,nullptr,FALSE);return 0;
+    case WM_WINDOWPOSCHANGED:
+        if(app->windowStateReady&&!app->fullscreen&&!app->changingWindowMode&&!IsIconic(window)&&!IsZoomed(window))
+            GetWindowRect(window,&app->windowState.bounds);
+        return DefWindowProcW(window,message,wparam,lparam);
+    case WM_EXITSIZEMOVE:
+        app->saveWindow();return 0;
+    case WM_SETFOCUS:
+        app->background=false;return 0;
+    case WM_ACTIVATEAPP:
+        if(!wparam)app->pauseForFocus(window);
+        else app->background=false;
+        return 0;
     case WM_TIMER:
         try { app->update(window); }
         catch (const std::exception& error) {
@@ -1200,6 +1392,11 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             }
             if(key==app->bindings[3] && !app->menu) app->exitPressed=true;
             if(app->menu) {
+                if(app->page==Application::Page::Levels){
+                    if(key==VK_F5){app->refreshMaps(window);return 0;}
+                    if(key=='E'&&(GetKeyState(VK_CONTROL)&0x8000)){app->openMapEditor(window);return 0;}
+                    if(key=='O'&&(GetKeyState(VK_CONTROL)&0x8000)){app->openMapsFolder(window);return 0;}
+                }
                 if(key==VK_LEFT||key==VK_RIGHT||key==VK_UP||key==VK_DOWN||key==VK_PRIOR||key==VK_NEXT||key==VK_RETURN)
                     app->mouseNavigation=false;
                 if(app->page!=Application::Page::Levels){
@@ -1302,8 +1499,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         app->mousePressed = {};
         return 0;
     case WM_KILLFOCUS:
-        if(app->replay.active) app->replay.paused=true;
-        app->clearInput();
+        app->pauseForFocus(window);
         return 0;
     case WM_ERASEBKGND:
         return 1;
@@ -1311,8 +1507,11 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         ++app->paintCount;
         PAINTSTRUCT paint{};
         HDC target = BeginPaint(window, &paint);
+        RECT client{};GetClientRect(window,&client);
+        const RECT view=viewport(window);
+        if(client.right<=0||client.bottom<=0||view.right<=view.left||view.bottom<=view.top){EndPaint(window,&paint);return 0;}
         HDC dc=CreateCompatibleDC(target);
-        HBITMAP bitmap=CreateCompatibleBitmap(target,1000,600);
+        HBITMAP bitmap=CreateCompatibleBitmap(target,client.right,client.bottom);
         auto oldBitmap=SelectObject(dc,bitmap);
         BITMAPINFO info{};
         info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -1321,18 +1520,24 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         info.bmiHeader.biPlanes = 1;
         info.bmiHeader.biBitCount = 32;
         info.bmiHeader.biCompression = BI_RGB;
-        SetDIBitsToDevice(dc, 0, 0, por2::WindowWidth, por2::WindowHeight, 0, 0, 0,
-                         por2::WindowHeight, app->renderer.pixels(), &info, DIB_RGB_COLORS);
+        // Scale only the game pixels. GDI rasterizes UI and TrueType fonts directly
+        // into the full-resolution back buffer through this logical coordinate map.
+        fill(dc,client,RGB(0,0,0));SetStretchBltMode(dc,COLORONCOLOR);
+        StretchDIBits(dc,view.left,view.top,view.right-view.left,view.bottom-view.top,
+                      0,0,1000,600,app->renderer.pixels(),&info,DIB_RGB_COLORS,SRCCOPY);
+        const int drawingState=SaveDC(dc);
+        SetMapMode(dc,MM_ANISOTROPIC);
+        SetWindowExtEx(dc,1000,600,nullptr);
+        SetViewportExtEx(dc,view.right-view.left,view.bottom-view.top,nullptr);
+        SetViewportOrgEx(dc,view.left,view.top,nullptr);
+        IntersectClipRect(dc,0,0,1000,600);
         if(app->intro) app->drawIntro(dc);
         else if(app->menu) app->drawMenu(dc);
         else if(app->levelIntroActive()) app->drawLevelIntro(dc);
         else if(app->tutorialActive)app->drawTutorial(dc);
         else if (app->game.finished()&&!app->hideReplayUi()) {
-            SetBkMode(dc, TRANSPARENT);
-            SetTextColor(dc, RGB(255, 255, 255));
-            RECT area{0, 30, por2::WindowWidth, 70};
             const auto completed=L"已完成！  "+keyName(app->bindings[4])+L"：重新开始    Esc：菜单";
-            DrawTextW(dc, completed.c_str(), -1, &area, DT_CENTER | DT_SINGLELINE);
+            label(dc,{0,30,1000,70},completed,20,RGB(255,255,255));
         }
         if(!app->menu && !app->intro && !app->levelIntroActive() && !app->tutorialActive && !app->hideReplayUi()) {
             const auto level=app->replay.active?(app->replay.script.customLevel?*app->replay.script.customLevel:por2::makeLevel(app->replay.initialLevel)):app->game.level();
@@ -1342,10 +1547,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             const std::wstring wide=utf8(caption);
             if(level.id==0&&!app->game.finished())
                 label(dc,{200,510,800,550},L"到达目标点后按 "+keyName(app->bindings[3])+L" 过关",22,RGB(190,190,190));
-            RECT levelArea{690, 548, 975, 588};
-            SetBkMode(dc, TRANSPARENT);
-            SetTextColor(dc, RGB(220, 230, 245));
-            DrawTextW(dc, wide.c_str(), -1, &levelArea, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE);
+            label(dc,{690,548,975,588},wide,18,RGB(220,230,245),DT_RIGHT|DT_BOTTOM|DT_SINGLELINE);
         }
         if(!app->menu && !app->intro) app->drawReplay(dc);
         if(!app->menu&&!app->intro&&!app->tutorialActive&&!app->replay.active&&!app->recordingMessage.empty()){
@@ -1353,24 +1555,14 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             label(dc,{10,10,925,44},app->recordingMessage+(app->recorder.active?L" · "+std::to_wstring(app->recorder.script.totalFrames)+L" 帧":L""),17,RGB(255,190,120));
         }
         if(!app->intro&&!app->menu)app->drawGear(dc);
-        RECT client{}; GetClientRect(window,&client);
-        const RECT view=viewport(window);
-        // Compose the scaled scene AND letterboxing offscreen. Clearing the visible
-        // window before StretchBlt exposed a black frame on every timer tick.
-        if(client.right>0 && client.bottom>0) {
-            HDC frame=CreateCompatibleDC(target);
-            HBITMAP frameBitmap=CreateCompatibleBitmap(target,client.right,client.bottom);
-            auto oldFrame=SelectObject(frame,frameBitmap);
-            fill(frame,client,RGB(0,0,0));
-            SetStretchBltMode(frame,COLORONCOLOR);
-            StretchBlt(frame,view.left,view.top,view.right-view.left,view.bottom-view.top,dc,0,0,1000,600,SRCCOPY);
-            BitBlt(target,0,0,client.right,client.bottom,frame,0,0,SRCCOPY);
-            SelectObject(frame,oldFrame); DeleteObject(frameBitmap); DeleteDC(frame);
-        }
+        RestoreDC(dc,drawingState);
+        // Present the completed UI, scene and black bars together to avoid flicker.
+        BitBlt(target,0,0,client.right,client.bottom,dc,0,0,SRCCOPY);
         SelectObject(dc,oldBitmap);
         if(app->smoke && (app->menu || app->intro || app->levelIntroActive() || app->tutorialActive || app->replay.active) && !app->screenshot.empty()) {
-            std::vector<std::uint32_t> pixels(1000*600);
-            if(!GetDIBits(dc,bitmap,0,600,pixels.data(),&info,DIB_RGB_COLORS))
+            info.bmiHeader.biWidth=client.right;info.bmiHeader.biHeight=-client.bottom;
+            std::vector<std::uint32_t> pixels(static_cast<std::size_t>(client.right)*client.bottom);
+            if(!GetDIBits(dc,bitmap,0,client.bottom,pixels.data(),&info,DIB_RGB_COLORS))
                 app->failure="menu screenshot failed";
             else {
                 BITMAPFILEHEADER header{}; header.bfType=0x4d42;
@@ -1388,7 +1580,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         return 0;
     }
     case WM_CLOSE:
-        if(app->stopRecording())DestroyWindow(window);
+        if(app->stopRecording()){app->saveWindow();DestroyWindow(window);}
         return 0;
     case WM_DESTROY:
         KillTimer(window, 1);
@@ -1401,7 +1593,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
 
 int runWindow(int level, bool smoke, const std::string& screenshot, bool direct, bool fullscreen, const std::optional<por2::ReplayScript>& script) {
     enableDpiAwareness();
-    if(smoke)checkDataFolders();
+    if(smoke){checkDataFolders();checkMapCatalog();}
     Application app(level);
     app.smoke = smoke;
     if(!smoke){app.loadBindings();app.loadMaps();}
@@ -1436,6 +1628,7 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
         SetWindowPos(window,nullptr,0,0,original.right-original.left,original.bottom-original.top,
                      SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
     }
+    bool restoreMaximized=false;
     if(!smoke) {
         MONITORINFO monitor{sizeof(MONITORINFO),{},{},0};
         RECT bounds{};GetWindowRect(window,&bounds);
@@ -1449,10 +1642,21 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
             SetWindowPos(window,nullptr,bounds.left,bounds.top,bounds.right-bounds.left,
                          bounds.bottom-bounds.top,SWP_NOZORDER|SWP_NOACTIVATE);
         }
+        if(const auto saved=readWindowState(app.bindingsPath.parent_path()/L"window.ini")) {
+            bounds=saved->bounds;
+            if(GetMonitorInfoW(MonitorFromRect(&bounds,MONITOR_DEFAULTTONEAREST),&monitor)) {
+                bounds=fitToWorkArea(bounds,monitor.rcWork);
+                SetWindowPos(window,nullptr,bounds.left,bounds.top,bounds.right-bounds.left,
+                             bounds.bottom-bounds.top,SWP_NOZORDER|SWP_NOACTIVATE);
+                restoreMaximized=saved->maximized;
+            }
+        }
     }
+    GetWindowRect(window,&app.windowState.bounds);
+    app.windowState.maximized=restoreMaximized;app.windowStateReady=true;
     if(!app.mapWarnings.empty())MessageBoxW(window,app.mapWarnings.c_str(),L"部分自定义地图未加载",MB_OK|MB_ICONWARNING);
-    if(fullscreen) app.toggleFullscreen(window);
-    ShowWindow(window, smoke ? SW_HIDE : SW_SHOW);
+    ShowWindow(window,smoke?SW_HIDE:restoreMaximized?SW_SHOWMAXIMIZED:SW_SHOW);
+    if(fullscreen)app.toggleFullscreen(window);
     if (!SetTimer(window, 1, por2::TickMilliseconds, nullptr)) {
         DestroyWindow(window);
         throw std::runtime_error("game timer creation failed");
@@ -1465,7 +1669,7 @@ int runWindow(int level, bool smoke, const std::string& screenshot, bool direct,
     }
     if (status < 0) throw std::runtime_error("window message loop failed");
     if (!app.failure.empty()) throw std::runtime_error(app.failure);
-    if (smoke) std::cout << "PASS native window: user data migration/portable mode, DPI resize/input, Space title, gear menu, scrollable help, six live tutorial scenes/pause/skip, bindings/speed, recording/replay, maps and fullscreen\n";
+    if (smoke) std::cout << "PASS native window: focus/minimize pause, window memory, native-resolution UI at 125/200%, user/bundled map refresh, game-local data, DPI resize/input, Space title, gear menu, scrollable help, six live tutorial scenes/pause/skip, bindings/speed, recording/replay, maps and fullscreen\n";
     return static_cast<int>(message.wParam);
 }
 } // namespace

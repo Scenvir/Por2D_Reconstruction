@@ -122,13 +122,45 @@ for(const key of ['name','commentary'])$(key).oninput=()=>{const before=snapshot
 $('zoom').onchange=()=>{zoom=Number($('zoom').value);draw();};
 function travel(from,to){finish();if(!from.length)return;to.push(snapshot());map=M.parse(from.pop());clearSelection();markChanged();controls();draw();}
 $('undo').onclick=()=>travel(history,future);$('redo').onclick=()=>travel(future,history);
-function download(text,extension,type){
-  const url=URL.createObjectURL(new Blob([text],{type})),a=document.createElement('a');
-  a.href=url;a.download=(map.name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_')||'map')+extension;
-  a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+async function saveExport(text,extension){
+  const name=(map.name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_')||'map')+extension;
+  if(location.protocol==='file:'){
+    // Standalone use requires the browser's explicit directory permission.
+    if(!window.showDirectoryPicker)throw Error('请从游戏选关页打开编辑器（Ctrl+E），以直接保存到 levels。');
+    const directory=await window.showDirectoryPicker({id:'por2-levels',mode:'readwrite'});
+    if(directory.name.toLowerCase()!=='levels')throw Error('请选择游戏目录内的 levels 文件夹。');
+    let exists=false;
+    try{await directory.getFileHandle(name);exists=true;}catch(e){if(e.name!=='NotFoundError')throw e;}
+    if(exists&&!confirm('levels/'+name+' 已存在，是否覆盖？'))return false;
+    const handle=await directory.getFileHandle(name,{create:true}),writer=await handle.createWritable();
+    await writer.write(text);await writer.close();return true;
+  }
+  const url=new URL('save/'+encodeURIComponent(name),location.href);
+  const send=()=>fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:text});
+  let response;
+  try{
+    response=await send();
+    if(response.status===409){
+      if(!confirm('levels/'+name+' 已存在，是否覆盖？'))return false;
+      url.search='?replace=1';response=await send();
+    }
+  }catch(e){throw Error('无法连接游戏，请保持游戏运行，并从选关页重新打开编辑器。当前修改尚未保存。');}
+  if(!response.ok)throw Error(await response.text());
+  return true;
 }
-$('save').onclick=()=>{finish();download(JSON.stringify(map,null,2),'.json','application/json');dirty=false;document.title='Por2D 地图编辑器';status('已发起地图下载，请确认浏览器已保存文件。可用“打开地图”继续编辑。');};
-$('export').onclick=()=>{try{download(M.cpp(map),'.cpp','text/plain');status('已导出 makeCustomLevel()。请接入游戏关卡选择并重新编译；JSON 文件仍需单独保存。');}catch(e){status('不能导出：'+e.message);}};
+let saving=false;
+async function exportMap(cpp){
+  if(saving)return;
+  finish();const saved=snapshot();saving=true;$('save').disabled=$('export').disabled=true;
+  try{
+    if(!await saveExport(cpp?M.cpp(map):JSON.stringify(map,null,2),cpp?'.cpp':'.json'))return;
+    if(!cpp&&snapshot()===saved){dirty=false;document.title='Por2D 地图编辑器';}
+    status(cpp?'C++ 已导出到 levels；JSON 地图仍需单独保存。':'JSON 已保存到 levels，返回游戏按 F5 刷新列表即可游玩。');
+  }catch(e){status(e.name==='AbortError'?'已取消保存，当前修改仍未保存。':'保存失败：'+e.message);}
+  finally{saving=false;$('save').disabled=$('export').disabled=false;}
+}
+$('save').onclick=()=>exportMap(false);
+$('export').onclick=()=>exportMap(true);
 $('validate').onclick=()=>{const errors=M.validate(map);$('validation').textContent=errors.join('；');status(errors.length?'请检查以下问题（仍可保存 JSON 草稿）。':'检查通过：出生点和出口有效且未与墙重叠。尚未验证关卡可解性。');};
 $('new').onclick=()=>{if(dirty&&!confirm('当前地图尚未保存，确定新建？'))return;map=M.blank();history=[];future=[];dirty=false;document.title='Por2D 地图编辑器';controls();draw();$('validation').textContent='';status('已新建空白地图。');};
 $('open').onclick=()=>{if(dirty&&!confirm('当前地图尚未保存，确定打开其他地图？'))return;$('file').click();};
